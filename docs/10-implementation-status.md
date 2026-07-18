@@ -66,7 +66,7 @@ macOS stateを一時containerへ移行する検証では、公式credential ciph
 
 これらをprivate storage直編集、permission流用、推測したplatform hash、未リリースschemaのstable扱いで埋めません。
 
-ZCode EULA/terms reviewは、ZCode本体を同梱しない条件で`zcode-acp`を公開できるとのサポート回答により解消済みです。adapter releaseへZCode artifactを含めない境界は維持します。
+adapter releaseへZCode artifactを含めない境界は維持します。
 
 ## Added runtime evidence
 

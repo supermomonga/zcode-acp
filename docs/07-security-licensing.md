@@ -163,15 +163,13 @@ hash checkはlicenseや署名検証の代替ではありません。platformが�
 
 ### 11.1 ZCode
 
-ZCodeサポートへの確認により、ZCode本体を同梱しない条件で`zcode-acp`を公開できることを確認済みです。その条件を恒久的な配布境界として次を守ります。
+配布境界として次を守ります。
 
 - `zcode-acp` packageへZCode artifactを含めない
 - downloadしてvendorするinstallerを提供しない
 - userが公式配布元から別途インストールする
 - runtime pathを検出・起動するだけにする
 - ZCode trademark/logoをproject assetへ無断同梱しない
-
-この確認により、EULA/terms reviewは公開release blockerから解消しました。サポート回答はrelease判断の証跡として別途保管します。
 
 ### 11.2 Reference implementations and clients
 
@@ -209,5 +207,5 @@ ZCode runtimeが送信するtelemetry、prompt、workspace情報の範囲は今�
 - [x] child process cleanup test
 - [x] unsupported hash/version fail-closed test
 - [x] Linux multi-user file permission design review
-- [x] ZCode EULA/terms review（ZCode本体を同梱しない条件で公開可とサポート確認済み）
+- [x] release artifactへZCode本体を同梱しないことを確認
 - [x] dependency license/SBOM生成

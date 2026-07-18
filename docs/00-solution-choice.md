@@ -105,7 +105,7 @@ UIとadapterを分離すると、次の保守範囲も分離できます。
 - ZCodeが公式ACP serverを提供した
 - ZCodeがversioned public headless SDKを提供した
 - ACP clientがpermission/user-inputの必須UXを共通実装できない
-- ZCodeサポートの公開条件（ZCode本体を同梱しない）が変更された
+- ZCodeの配布条件または利用規約が変更された
 - selected TUI clientがACP v1 supportを廃止し、v2がstableになった
 
 公式ZCode ACPが提供された場合、`zcode-acp` は原則として不要になり、独自bridgeを延命しません。
