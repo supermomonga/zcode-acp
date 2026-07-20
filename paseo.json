@@ -1,0 +1,23 @@
+{
+  "worktree": {
+      "setup": [
+          "ln -s \"$PASEO_SOURCE_CHECKOUT_PATH/mise.local.toml\" mise.local.toml",
+          "mise trust"
+      ],
+    "teardown": "rm mise.local.toml"
+  },
+  "metadataGeneration": {
+    "title": {
+      "instructions": "Keep titles to a few words, no leading verb. Use English. Use the format `<type-emoji> <type>: <title>`. For type-emoji, use following <type> to <type-emoji> mapping.\n- feat: ✨\n- fix: ⚠️\n- docs: 📝\n- style: 💎\n- refactor: 🔨\n- perf: 🚀\n- test: 🚨\n- build: 📦\n- ci: ⚙️\n- chore: 🔧"
+    },
+    "branchName": {
+      "instructions": "Use the format <type>/<scope>-<short-desc>."
+    },
+    "commitMessage": {
+      "instructions": "Follow Conventional Commits. Use English for <description>."
+    },
+    "pullRequest": {
+      "instructions": "Include a Testing section in the body."
+    }
+  }
+}
