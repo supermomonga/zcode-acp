@@ -1,6 +1,12 @@
-# zcode-acp
+# zcode-acp | Unofficial ZCode ACP Agent
 
 `zcode-acp` is a TypeScript/Bun adapter that exposes an installed ZCode runtime as an ACP v1 stdio agent. It launches ZCode's desktop host service headlessly without copying ZCode credentials or model-provider configuration.
+
+> [!NOTE]
+> This project is an unofficial tool and is not officially released, endorsed, or maintained by ZCode or Z.ai.
+
+> [!WARNING]
+> zcode-acp uses ZCode’s undocumented headless mode. It does not modify the ZCode application itself or include any implementation that bypasses its communications. However, there is no guarantee that it will not be interpreted as violating the [Terms of Service](https://zcode.z.ai/en/terms)￼. Therefore, please use it at your own risk.
 
 ## Capabilities
 
