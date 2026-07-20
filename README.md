@@ -44,7 +44,7 @@ Generate release artifacts, SHA-256 checksums, and an SPDX 2.3 SBOM:
 bun run release
 ```
 
-Pushing a `v*` tag runs the same verification and build in GitHub Actions, then publishes five platform binaries, checksums, and the SBOM to a GitHub Release.
+Run the Version Bump workflow to create a `release/vX.Y.Z` pull request. Merging the generated PR runs the same verification and build in GitHub Actions, tags the merge as `vX.Y.Z`, and publishes five platform binaries, checksums, and the SBOM to a GitHub Release.
 
 ## CLI
 

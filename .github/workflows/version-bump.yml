@@ -1,0 +1,58 @@
+name: Version Bump
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: "Release type"
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+      version:
+        description: "Explicit version (overrides release_type if set, e.g. 1.2.3)"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bump:
+    name: Bump Version & Create PR
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Bump package version
+        id: bump-version
+        uses: supermomonga/action-bump-cli@v1
+        with:
+          file: package.json
+          pattern: '"version":\s*"(\d+\.\d+\.\d+)"'
+          release_type: ${{ inputs.version == '' && inputs.release_type || '' }}
+          version: ${{ inputs.version }}
+
+      - name: Bump runtime version
+        uses: supermomonga/action-bump-cli@v1
+        with:
+          file: src/version.ts
+          pattern: 'ZCODE_ACP_VERSION = "(\d+\.\d+\.\d+)"'
+          version: ${{ steps.bump-version.outputs.version }}
+
+      - name: Create pull request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: release/v${{ steps.bump-version.outputs.version }}
+          commit-message: "bump version to ${{ steps.bump-version.outputs.version }}"
+          title: "Release v${{ steps.bump-version.outputs.version }}"
+          body: |
+            Bump version to **${{ steps.bump-version.outputs.version }}**.
+
+            This PR was automatically created by the Version Bump workflow.
+          labels: release

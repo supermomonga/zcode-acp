@@ -1,9 +1,10 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - "v*"
+  pull_request:
+    types: [closed]
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -13,14 +14,61 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  create-tag:
+    name: Create tag
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.merged == true && contains(github.event.pull_request.labels.*.name, 'release'))
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Extract and validate version
+        id: version
+        shell: bash
+        run: |
+          package_version="$(python3 -c 'import json; print(json.load(open("package.json"))["version"])')"
+          runtime_version="$(sed -n 's/^export const ZCODE_ACP_VERSION = "\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)";$/\1/p' src/version.ts)"
+          if [[ ! "$package_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid package.json version: $package_version"
+            exit 1
+          fi
+          if [[ "$package_version" != "$runtime_version" ]]; then
+            echo "::error::Version mismatch: package.json=$package_version src/version.ts=$runtime_version"
+            exit 1
+          fi
+          echo "version=$package_version" >> "$GITHUB_OUTPUT"
+
+      - name: Delete existing release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release delete "v${{ steps.version.outputs.version }}"
+          --repo "${{ github.repository }}" --yes || true
+
+      - name: Delete existing tag
+        run: git push origin --delete "v${{ steps.version.outputs.version }}" || true
+
+      - name: Create tag
+        run: |
+          git tag "v${{ steps.version.outputs.version }}"
+          git push origin "v${{ steps.version.outputs.version }}"
+
   release:
     name: Build and publish release
+    needs: create-tag
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
+        with:
+          ref: v${{ needs.create-tag.outputs.version }}
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
@@ -40,7 +88,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: >-
-          gh release create "${GITHUB_REF_NAME}"
+          gh release create "v${{ needs.create-tag.outputs.version }}"
           dist/zcode-acp-darwin-arm64
           dist/zcode-acp-darwin-x64
           dist/zcode-acp-linux-arm64
@@ -50,4 +98,4 @@ jobs:
           dist/sbom.spdx.json
           --verify-tag
           --generate-notes
-          --title "${GITHUB_REF_NAME}"
+          --title "v${{ needs.create-tag.outputs.version }}"

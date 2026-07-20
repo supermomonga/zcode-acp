@@ -1,0 +1,4 @@
+interface:
+  display_name: "Bump and Release"
+  short_description: "Run release workflows and sync local main"
+  default_prompt: "Use $bump-and-release to run a patch release and report the GitHub Releases URL."
