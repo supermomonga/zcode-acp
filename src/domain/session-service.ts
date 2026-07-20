@@ -1228,7 +1228,8 @@ function configOptions(settings: SessionSettings): acp.SessionConfigOption[] {
       currentValue: modelValue(settings.model.current),
       options: settings.model.available.map((model) => ({
         value: modelValue(model.ref),
-        name: model.label,
+        // Match the official ZCode GUI model picker, which displays model IDs instead of host labels.
+        name: model.ref.modelId,
         ...(model.providerLabel === undefined ? {} : { description: model.providerLabel }),
       })),
     },
