@@ -113,6 +113,10 @@ export async function discoverRuntime(
   return {
     paths,
     identity,
+    ...(assessment.expectedCliSha256 === undefined
+      ? {}
+      : { expectedCliSha256: assessment.expectedCliSha256 }),
+    ...(assessment.cliIntegrity === undefined ? {} : { cliIntegrity: assessment.cliIntegrity }),
     ...(host === undefined ? {} : { hostContract: host }),
     compatibility: hostMismatch === undefined ? assessment.status : "unsupported",
     compatibilityReason: hostMismatch ?? assessment.reason,

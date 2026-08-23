@@ -2,7 +2,7 @@
 
 ## 1. Scope
 
-対象はcompatibility manifestに登録されたZCode 3.3.6 / CLI 0.15.2およびZCode 3.8.1 / CLI 0.16.3の`app.asar/out/host`に含まれる公式local host serviceです。公開APIではないため、app/build/CLI/metadata/host hashが完全一致するartifactにだけ適用します。
+対象はcompatibility manifestに登録されたZCode 3.3.6 / CLI 0.15.2およびZCode 3.8.1 / CLI 0.16.3の`app.asar/out/host`に含まれる公式local host serviceです。公開APIではないため、app/build/platform、CLI version、metadata hashとhost hash/exportが一致するartifactにだけ適用します。CLI本文のSHA-256はintegrity診断であり、host contractの選択条件ではありません。
 
 `zcode.cjs app-server --stdio`の直接protocolも調査しましたが、desktopのmodel-provider registryを持たないためproduction経路には採用していません。
 
@@ -119,7 +119,8 @@ form elicitation capabilityを持つACP clientには複数質問・multiple sele
 platform + architecture
 + app version/build where available
 + CLI version
-+ zcode.cjs SHA-256
++ `zcode.cjs version`のCLI version
++ zcode.cjs SHA-256（公式artifactとの差分診断）
 + .node-bundle-meta.json SHA-256
 + host index SHA-256
 + host RPC module path + SHA-256 + required exports

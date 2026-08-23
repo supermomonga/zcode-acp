@@ -76,6 +76,8 @@ export interface RuntimeIdentity {
 export interface DiscoveredRuntime {
   readonly paths: RuntimePaths;
   readonly identity: RuntimeIdentity;
+  readonly expectedCliSha256?: string;
+  readonly cliIntegrity?: "verified" | "modified";
   readonly hostContract?: ResolvedHostContract;
   readonly compatibility: CompatibilityStatus;
   readonly compatibilityReason: string;

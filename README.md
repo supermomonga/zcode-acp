@@ -23,7 +23,7 @@
 - Session cancellation and granular `$/cancel_request` handling
 - Use of ZCode's provider registry, credentials, and runtime-header path
 - Single-file executables for macOS arm64/x64, Linux arm64/x64, and Windows x64
-- Fail-closed compatibility checks using exact artifact hashes
+- Fail-closed host compatibility checks with separate CLI integrity reporting
 - Paseo integration through an OpenCode SDK 1.14.46-compatible HTTP/SSE facade
 
 `additionalDirectories` and session deletion are not advertised because the supported ZCode hosts do not provide the required APIs. `session/list` requires a working directory to match the ZCode host contract and returns invalid params when it is omitted. If structured input is required but the ACP client does not support form elicitation, the adapter declines the native request and explicitly stops the turn.
@@ -36,7 +36,7 @@
 | macOS arm64 | 3.3.6 build 3.3.6.3198 | 0.15.2 | Supported |
 | Linux x64 | 3.3.6-3198 official `.deb` | 0.15.2 | Supported |
 
-Artifacts with the same version string but a different CLI, metadata, host index, or host RPC module hash are rejected. Run `doctor --json` to inspect the selected host contract, detected hashes, and compatibility decision.
+Compatibility requires an exact app/build/platform, CLI version, metadata hash, host index hash, host RPC module hash, and required RPC exports. A different `zcode.cjs` hash is reported as `cliIntegrity: "modified"` but does not invalidate an otherwise verified host contract. Run `doctor --json` to inspect both decisions.
 
 ## Development
 

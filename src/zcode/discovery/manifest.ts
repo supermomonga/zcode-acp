@@ -94,6 +94,8 @@ const COMPATIBILITY_ENTRIES: readonly CompatibilityEntry[] = [
 export function assessCompatibility(identity: RuntimeIdentity): {
   status: "supported" | "development-candidate" | "unsupported";
   reason: string;
+  expectedCliSha256?: string;
+  cliIntegrity?: "verified" | "modified";
   hostContract?: HostContractDescriptor;
 } {
   const match = COMPATIBILITY_ENTRIES.find(
@@ -102,7 +104,6 @@ export function assessCompatibility(identity: RuntimeIdentity): {
       entry.appVersion === identity.appVersion &&
       entry.appBuild === identity.appBuild &&
       entry.cliVersion === identity.cliVersion &&
-      entry.cliSha256 === identity.cliSha256 &&
       entry.metadataSha256 === identity.metadataSha256,
   );
 
@@ -113,17 +114,25 @@ export function assessCompatibility(identity: RuntimeIdentity): {
     };
   }
 
+  const cliIntegrity = match.cliSha256 === identity.cliSha256 ? "verified" : "modified";
+
   if (!match.releaseGatesPassed) {
     return {
       status: "development-candidate",
       reason: "Artifact matches the investigated snapshot, but Phase 0 and release gates are incomplete",
+      expectedCliSha256: match.cliSha256,
+      cliIntegrity,
       hostContract: match.hostContract,
     };
   }
 
   return {
     status: "supported",
-    reason: "All compatibility release gates passed",
+    reason: cliIntegrity === "verified"
+      ? "All host compatibility release gates passed and the CLI artifact is verified"
+      : "All host compatibility release gates passed; the CLI content differs from the verified artifact",
+    expectedCliSha256: match.cliSha256,
+    cliIntegrity,
     hostContract: match.hostContract,
   };
 }

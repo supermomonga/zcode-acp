@@ -14,7 +14,7 @@ build successだけでは、private protocol adapterの正しさを保証でき�
 
 | Component | Version/platform | Evidence | Status |
 | --- | --- | --- | --- |
-| ZCode app | 3.8.1 build 3.8.1.5310 / macOS arm64 | exact artifact/host hashes、実model/tool/permission/input/cancel/resume E2E | supported |
+| ZCode app | 3.8.1 build 3.8.1.5310 / macOS arm64 | exact host hashes、official/modified CLI integrity、実model/tool/permission/input/cancel/resume E2E | supported |
 | ZCode CLI | 0.16.3 / darwin-arm64 | bundled runtime version/doctor、host E2E | supported |
 | ZCode app | 3.3.6 build 3.3.6.3198 / macOS arm64 | metadata/hash、official host、実model/tool/cancel E2E | supported |
 | ZCode CLI | 0.15.2 / darwin-arm64 | bundled runtime version/doctor、host E2E | supported |
@@ -25,9 +25,9 @@ build successだけでは、private protocol adapterの正しさを保証でき�
 | Toad | 0.6.20 / macOS arm64 | 実process log、initialize/session/new/prompt stream/end_turn | baseline pass |
 | acpx | 0.12.0 / macOS arm64 | strict JSON output、initialize/session/new/tool/text/end_turn | baseline pass |
 | Paseo OpenCode facade | Paseo `c60fa098a` / `@opencode-ai/sdk` 1.14.46 | standalone binary + real SDK/model、GLM-only catalog、SSE/tool/history/restart-resume/delete | pass |
-| Paseo daemon | 0.5.0-beta.5 / macOS arm64 | isolated daemon、provider models、agent create/read、same-agent send/resume、stop/cancel | pass |
+| Paseo daemon | 0.5.1 / macOS arm64 | isolated daemon、provider models、agent create/read、same-agent send/resume、stop/cancel | pass |
 
-support matrixはversion文字列だけでなくCLI/metadata/host index/host RPC module SHA-256まで一致するartifactに限定します。3.8.1の固定値はCLI `9318f60f…e4274`、metadata `3cb76cfe…4660`、host index `d0f82503…9c3f`、host RPC `46959e5a…9fc3`です。
+support matrixはapp/build/platform、`zcode.cjs version`が返すCLI version、metadata hashでhost contract候補を選び、host index/host RPC module SHA-256とrequired exportを完全一致で検証します。3.8.1の公式CLI SHA-256 `9318f60f…e4274`はintegrity比較値であり、異なる場合は`modified`と診断します。metadataは`3cb76cfe…4660`、host indexは`d0f82503…9c3f`、host RPCは`46959e5a…9fc3`です。
 
 ## 3. Test layers
 
@@ -145,7 +145,7 @@ permission選択画面やcancel操作のclient固有UXは、adapterのwire/runti
 ZCode private event schemaの正本を作る手順:
 
 1. isolated test user/homeとtemporary workspaceを用意
-2. 対象ZCode app/build/CLIとCLI/metadata/host index/host RPC hashを記録
+2. 対象ZCode app/build/CLI versionとCLI integrity/metadata/host index/host RPC hashを記録
 3. app-serverとの送受信をframe単位でcapture
 4. session ID、trace ID、path、prompt、token、headerをdeterministic placeholderへ置換
 5. request/response/event orderingを保持
@@ -243,7 +243,7 @@ performance optimizationでevent orderingやschema validationを省略しませ�
 ## 8. Update procedure for a new ZCode version
 
 1. 公式artifactを取得しsignature/checksumを記録
-2. app/CLI/metadata/hashを採取
+2. app/build/platform、CLI version/integrity、metadata/host hashを採取
 3. launch smoke
 4. protocol method inventoryをdiff
 5. schema/golden tracesをdiff

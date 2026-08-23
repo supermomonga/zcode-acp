@@ -189,7 +189,7 @@ stdoutにはACP frameだけを出します。ログ、banner、progress bar、st
 
 ### NFR-3: Compatibility
 
-- ZCode app/CLI/metadata hash単位でcontract fixtureを保持する
+- ZCode app/build/platform、CLI version、metadata/host hash単位でcontract fixtureを保持する
 - ACP schemaとSDKをexact versionでlockする
 - ZCode更新時はcompatibility suiteを通すまでsupported matrixへ追加しない
 

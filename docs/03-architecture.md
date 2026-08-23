@@ -75,7 +75,8 @@ flowchart TB
 
 - install rootを一意に解決
 - runtime executable、CLI entry、metadataの組を検証
-- app version、CLI version、platform、CLI/metadata hashを取得してsupport matrixと照合
+- app version/build、platform、`zcode.cjs version`のCLI version、metadata hashをsupport matrixと照合
+- CLI SHA-256は公式artifactとの差分として診断するが、host互換性の選択条件にはしない
 - artifact固有descriptorからhost index/RPC moduleを解決し、install root内であること、SHA-256、必要な`g/i/j` exportを検証
 - 起動前の軽量doctor smoke
 

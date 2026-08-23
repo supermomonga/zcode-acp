@@ -30,7 +30,7 @@ flowchart LR
 | ZCode起動 | 公式Electron Node runtimeで公式host serviceをworkerとして起動 |
 | Node.js | system Nodeへfallbackしない |
 | 配布 | ZCodeを再配布せず、adapterだけをstandalone binary化 |
-| 互換性 | app/CLI/metadata hashがsupport matrixにない場合fail closed |
+| 互換性 | app/build/platform、CLI version、metadata/host contractがsupport matrixにない場合fail closed。CLI hash差分はintegrity診断 |
 | 権限 | native optionをACP permissionへ一対一変換。自動承認しない |
 | ログ | stdoutはACP専用。stderrもsecret/prompt/headerをredact |
 

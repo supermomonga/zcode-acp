@@ -21,14 +21,14 @@ MVPと、ZCode 3.3.6および3.8.1 hostが提供するpost-MVP surfaceは実装�
 - model generation cancel、`$/cancel_request`、clean shutdown
 - notification handler内のnested native requestをdeadlockさせないordered dispatch queue
 - stdout isolation、bounded NDJSON、redaction、timeout、late response処理
-- exact app/CLI/metadata/host index/host RPC hash compatibility gateとversion別host contract adapter
+- exact app/build/platform、CLI version、metadata/host index/host RPC compatibility gate、CLI integrity診断、version別host contract adapter
 - macOS arm64/x64、Linux arm64/x64、Windows x64 standalone artifacts、SHA-256、SPDX 2.3 SBOM
 - Toad 0.6.20 / acpx 0.12.0のbaseline client interoperability
 - Paseo commit `c60fa098a` / OpenCode SDK 1.14.46向けHTTP/SSE facade
 - protocol-neutral ZCode session engineとACP/OpenCode frontend分離
 - Paseo上のmodel、thought level、mode、stream、tool、MCP、question、permission、cancel、resume変換
 
-Paseo facadeは固定SDKを使うHTTP/SSE契約テストに加え、standalone binaryと実モデルでGLM-only catalog、SSE、read tool、permission、history、process再起動後のresume/deleteまで検証済みです。さらに隔離したPaseo daemon 0.5.0-beta.5からprovider catalog、agent create/read、同一agentへのsend/resume、stop/cancelを通過しています。実モデルの応答待ちでもSSEを維持するよう、loopback serverのidle timeoutを明示しています。
+Paseo facadeは固定SDKを使うHTTP/SSE契約テストに加え、standalone binaryと実モデルでGLM-only catalog、SSE、read tool、permission、history、process再起動後のresume/deleteまで検証済みです。さらに隔離したPaseo daemon 0.5.1からprovider catalog、agent create/read、同一agentへのsend/resume、stop/cancelを通過しています。実モデルの応答待ちでもSSEを維持するよう、loopback serverのidle timeoutを明示しています。
 
 ## Runtime evidence
 
@@ -36,12 +36,12 @@ Paseo facadeは固定SDKを使うHTTP/SSE契約テストに加え、standalone b
 
 ZCode 3.8.1 build 3.8.1.5310 / CLI 0.16.3で次を実行済みです。
 
-- CLI/metadata/host index/host RPC moduleの完全一致hash gateと`g/i/j` export検証
+- CLI version/metadataとhost index/host RPC moduleの完全一致gate、CLI hash integrity診断、`g/i/j` export検証
 - `zcode-agent` / `zcode-task` serviceへのversion別dispatch
 - ACP wireの実モデルtext/read/write allow/write deny/structured input/cancel/resume/history
 - 3.8.1 native `stopGeneration`、`respondElicitation`、permission option IDの往復
 - OpenCode SDK 1.14.46からのGLM-only catalog、SSE/tool/history/restart-resume/delete
-- Paseo daemon 0.5.0-beta.5からのagent create/read、same-agent resume、cancel/idle復帰
+- Paseo daemon 0.5.1からのagent create/read、same-agent resume、cancel/idle復帰
 - adapter起動により生成されたprocessがElectron Node host workerだけであることのinspection
 
 ZCode 3.3.6 build 3.3.6.3198 / CLI 0.15.2で次を実行済みです。

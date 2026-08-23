@@ -107,6 +107,8 @@ async function main(argv: readonly string[]): Promise<number> {
     zcodeCliVersion: runtime.identity.cliVersion ?? smoke.cliVersion ?? null,
     runtime: runtime.identity.bundle.runtime,
     cliSha256: runtime.identity.cliSha256,
+    expectedCliSha256: runtime.expectedCliSha256 ?? null,
+    cliIntegrity: runtime.cliIntegrity ?? null,
     metadataSha256: runtime.identity.metadataSha256,
     hostContract: runtime.hostContract?.descriptor.id ?? null,
     hostIndexSha256: runtime.hostContract?.hostIndexSha256 ?? null,
