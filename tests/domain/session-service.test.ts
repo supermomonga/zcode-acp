@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { realpath } from "node:fs/promises";
 import { NullLogger } from "../../src/diagnostics/logger.ts";
-import { HeadlessZCodeSessionService } from "../../src/domain/session-service.ts";
+import { HeadlessZCodeSessionEngine } from "../../src/domain/session-service.ts";
 
 describe("HeadlessZCodeSessionService", () => {
   test("uses model IDs for ACP display names like the official ZCode GUI", async () => {
@@ -58,7 +58,7 @@ describe("HeadlessZCodeSessionService", () => {
       },
       async close() {},
     };
-    const service = new HeadlessZCodeSessionService(new NullLogger());
+    const service = new HeadlessZCodeSessionEngine(new NullLogger());
     Reflect.set(service, "bridgePromise", Promise.resolve(bridge));
 
     try {

@@ -129,12 +129,21 @@ try {
       prompt: [{ type: "text", text: "Write an extremely long numbered list from 1 to 10000." }],
     },
   });
-  const cancelTimer = setTimeout(() => {
-    void write({ jsonrpc: "2.0", method: "session/cancel", params: { sessionId } });
-  }, 500);
   let cancelStopReason: unknown;
+  let cancelSent = false;
+  const cancelTimeout = setTimeout(() => {
+    if (child.exitCode === null) child.kill("SIGTERM");
+  }, 120_000);
   while (cancelStopReason === undefined) {
     const frame = await next();
+    if (!cancelSent && frame.method === "session/update") {
+      const update = (frame.params as { update?: { sessionUpdate?: unknown } }).update;
+      if (update?.sessionUpdate === "agent_message_chunk" ||
+        update?.sessionUpdate === "agent_thought_chunk") {
+        cancelSent = true;
+        await write({ jsonrpc: "2.0", method: "session/cancel", params: { sessionId } });
+      }
+    }
     if (frame.method === "session/request_permission") {
       await write({
         jsonrpc: "2.0",
@@ -143,10 +152,11 @@ try {
       });
     }
     if (frame.id === 5) {
+      if (frame.error !== undefined) throw new Error(`Cancel prompt failed: ${JSON.stringify(frame)}`);
       cancelStopReason = (frame.result as { stopReason?: unknown } | undefined)?.stopReason;
     }
   }
-  clearTimeout(cancelTimer);
+  clearTimeout(cancelTimeout);
   if (cancelStopReason !== "cancelled") {
     throw new Error(`Cancel path failed: ${String(cancelStopReason)}`);
   }

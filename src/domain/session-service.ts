@@ -1,4 +1,3 @@
-import type * as acp from "@agentclientprotocol/sdk";
 import { basename, isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Logger } from "../diagnostics/logger.ts";
@@ -11,6 +10,18 @@ import {
   runRuntimeSmoke,
 } from "../zcode/discovery/discover.ts";
 import type { DiscoveryOptions } from "../zcode/discovery/discover.ts";
+import type {
+  AvailableCommand,
+  McpServer,
+  PromptContentBlock,
+  PromptResult,
+  SessionConfigOption,
+  SessionEngine,
+  SessionInteraction,
+  SessionMode,
+  SessionSetup,
+  SessionState,
+} from "./session-contract.ts";
 import { ZCodeHostBridge, type HostSubscription } from "../zcode/host/bridge.ts";
 import {
   InitializeResultSchema,
@@ -29,35 +40,6 @@ import {
   type UserInputRequest,
 } from "../zcode/protocol/v1/host-schemas.ts";
 
-export interface SessionService {
-  initialize(params: acp.InitializeRequest): Promise<void>;
-  newSession(params: acp.NewSessionRequest): Promise<acp.NewSessionResponse>;
-  loadSession(
-    params: acp.LoadSessionRequest,
-    context: acp.AgentContext,
-  ): Promise<acp.LoadSessionResponse>;
-  resumeSession(params: acp.ResumeSessionRequest): Promise<acp.ResumeSessionResponse>;
-  listSessions(params: acp.ListSessionsRequest): Promise<acp.ListSessionsResponse>;
-  closeSession(params: acp.CloseSessionRequest): Promise<acp.CloseSessionResponse>;
-  setSessionMode(
-    params: acp.SetSessionModeRequest,
-    context?: acp.AgentContext,
-  ): Promise<acp.SetSessionModeResponse>;
-  setSessionConfigOption(
-    params: acp.SetSessionConfigOptionRequest,
-    context?: acp.AgentContext,
-  ): Promise<acp.SetSessionConfigOptionResponse>;
-  authenticate(params: acp.AuthenticateRequest): Promise<acp.AuthenticateResponse>;
-  logout(params: acp.LogoutRequest): Promise<acp.LogoutResponse>;
-  prompt(
-    params: acp.PromptRequest,
-    context: acp.AgentContext,
-    signal: AbortSignal,
-  ): Promise<acp.PromptResponse>;
-  cancel(params: acp.CancelNotification): Promise<void>;
-  close(): Promise<void>;
-}
-
 interface ToolState {
   readonly id: string;
   name: string;
@@ -66,8 +48,8 @@ interface ToolState {
 }
 
 interface ActiveTurn {
-  readonly context: acp.AgentContext;
-  readonly resolve: (response: acp.PromptResponse) => void;
+  readonly interaction: SessionInteraction;
+  readonly resolve: (response: PromptResult) => void;
   readonly reject: (error: unknown) => void;
   readonly tools: Map<string, ToolState>;
   cancelled: boolean;
@@ -84,7 +66,12 @@ interface SessionBinding {
   active?: ActiveTurn;
 }
 
-const MODE_OPTIONS: acp.SessionMode[] = [
+interface NativePermissionAnswer {
+  readonly optionId: string;
+  readonly response: PermissionResponse;
+}
+
+export const MODE_OPTIONS: SessionMode[] = [
   { id: "build", name: "Build", description: "標準の確認付き実装モード" },
   { id: "edit", name: "Edit", description: "編集中心の権限制御モード" },
   { id: "plan", name: "Plan", description: "読み取りと計画を中心にしたモード" },
@@ -94,7 +81,6 @@ const MODE_OPTIONS: acp.SessionMode[] = [
 
 const MODEL_CONFIG_ID = "zcode.model";
 const THOUGHT_CONFIG_ID = "zcode.thought_level";
-const AUTH_METHOD_ID = "zcode-cli";
 
 const IgnoredSessionEvents = new Set([
   "session.updated",
@@ -105,21 +91,21 @@ const IgnoredSessionEvents = new Set([
   "checkpoint.created",
 ]);
 
-export class HeadlessZCodeSessionService implements SessionService {
+export class HeadlessZCodeSessionEngine implements SessionEngine {
   private readonly sessions = new Map<string, SessionBinding>();
+  private readonly workspaceCommands = new Map<string, AvailableCommand[]>();
   private bridgePromise: Promise<ZCodeHostBridge> | undefined;
-  private formElicitationSupported = false;
 
   constructor(
     private readonly logger: Logger,
     private readonly discoveryOptions: DiscoveryOptions = {},
   ) {}
 
-  async initialize(params: acp.InitializeRequest): Promise<void> {
-    this.formElicitationSupported = params.clientCapabilities?.elicitation?.form != null;
-  }
-
-  async newSession(params: acp.NewSessionRequest): Promise<acp.NewSessionResponse> {
+  async newSession(params: {
+    cwd: string;
+    mcpServers: McpServer[];
+    additionalDirectories?: string[];
+  }): Promise<SessionSetup> {
     assertNoAdditionalDirectories(params.additionalDirectories);
     const workspace = await resolveWorkspace(params.cwd);
     const bridge = await this.getBridge();
@@ -139,19 +125,52 @@ export class HeadlessZCodeSessionService implements SessionService {
     return sessionSetupResponse(snapshot);
   }
 
+  async getWorkspaceSettings(cwd: string): Promise<SessionSettings> {
+    const workspace = await resolveWorkspace(cwd);
+    await this.initializeWorkspace(workspace.cwd);
+    const state = await (await this.getBridge()).request(
+      "readWorkspaceState",
+      { workspacePath: workspace.cwd },
+      WorkspaceStateResultSchema,
+      60_000,
+    );
+    return state.settings;
+  }
+
+  async getWorkspaceCommands(cwd: string): Promise<AvailableCommand[]> {
+    const workspace = await resolveWorkspace(cwd);
+    return [...(this.workspaceCommands.get(workspace.cwd) ?? [])];
+  }
+
+  async reconfigureSessionMcp(
+    cwd: string,
+    sessionId: string,
+    mcpServers: McpServer[],
+  ): Promise<SessionState> {
+    const existing = this.sessions.get(sessionId);
+    if (existing?.active !== undefined) {
+      throw new AdapterError("SESSION_BUSY", "MCP configuration cannot change during a turn");
+    }
+    const snapshot = await this.resumeSnapshot(cwd, sessionId, mcpServers);
+    return sessionState(snapshot);
+  }
+
   async loadSession(
-    params: acp.LoadSessionRequest,
-    context: acp.AgentContext,
-  ): Promise<acp.LoadSessionResponse> {
+    params: {
+      cwd: string;
+      sessionId: string;
+      mcpServers: McpServer[];
+      additionalDirectories?: string[];
+    },
+    interaction: SessionInteraction,
+  ): Promise<SessionState> {
     assertNoAdditionalDirectories(params.additionalDirectories);
     const snapshot = await this.resumeSnapshot(params.cwd, params.sessionId, params.mcpServers);
     for (const message of snapshot.messages) {
       for (const part of message.parts) {
         const text = stringValue(part.text);
         if (text !== undefined && (part.type === "text" || part.type === "reasoning")) {
-          await context.notify("session/update", {
-            sessionId: params.sessionId,
-            update: {
+          await interaction.notify(params.sessionId, {
               sessionUpdate: message.info.role === "user"
                 ? "user_message_chunk"
                 : part.type === "reasoning"
@@ -159,16 +178,13 @@ export class HeadlessZCodeSessionService implements SessionService {
                   : "agent_message_chunk",
               content: { type: "text", text },
               messageId: message.info.messageId,
-            },
           });
           continue;
         }
         if (part.type === "file") {
           const uri = stringValue(part.url);
           if (uri === undefined) continue;
-          await context.notify("session/update", {
-            sessionId: params.sessionId,
-            update: {
+          await interaction.notify(params.sessionId, {
               sessionUpdate: message.info.role === "user"
                 ? "user_message_chunk"
                 : "agent_message_chunk",
@@ -179,7 +195,6 @@ export class HeadlessZCodeSessionService implements SessionService {
                 ...(stringValue(part.mime) === undefined ? {} : { mimeType: stringValue(part.mime)! }),
               },
               messageId: message.info.messageId,
-            },
           });
           continue;
         }
@@ -192,9 +207,7 @@ export class HeadlessZCodeSessionService implements SessionService {
           }
           const status = persistedToolStatus(stringValue(state.status));
           const output = state.output ?? state.error;
-          await context.notify("session/update", {
-            sessionId: params.sessionId,
-            update: {
+          await interaction.notify(params.sessionId, {
               sessionUpdate: "tool_call",
               toolCallId,
               title: stringValue(state.title) ?? name,
@@ -202,22 +215,28 @@ export class HeadlessZCodeSessionService implements SessionService {
               status,
               rawInput: state.input,
               ...(output === undefined ? {} : { rawOutput: output, content: textToolContent(output) }),
-            },
           });
         }
       }
     }
-    await this.notifySessionMetadata(context, params.sessionId, snapshot);
+    await this.notifySessionMetadata(interaction, params.sessionId, snapshot);
     return sessionState(snapshot);
   }
 
-  async resumeSession(params: acp.ResumeSessionRequest): Promise<acp.ResumeSessionResponse> {
+  async resumeSession(params: {
+    cwd: string;
+    sessionId: string;
+    mcpServers?: McpServer[];
+    additionalDirectories?: string[];
+  }): Promise<SessionState> {
     assertNoAdditionalDirectories(params.additionalDirectories);
     const snapshot = await this.resumeSnapshot(params.cwd, params.sessionId, params.mcpServers ?? []);
     return sessionState(snapshot);
   }
 
-  async listSessions(params: acp.ListSessionsRequest): Promise<acp.ListSessionsResponse> {
+  async listSessions(params: { cwd?: string | null; cursor?: string | null }): Promise<{
+    sessions: Array<{ sessionId: string; cwd: string; title?: string; updatedAt?: string }>;
+  }> {
     if (params.cwd == null) {
       throw new AdapterError(
         "INVALID_CONFIGURATION",
@@ -247,9 +266,9 @@ export class HeadlessZCodeSessionService implements SessionService {
     };
   }
 
-  async closeSession(params: acp.CloseSessionRequest): Promise<acp.CloseSessionResponse> {
+  async closeSession(params: { sessionId: string }): Promise<void> {
     const binding = this.sessions.get(params.sessionId);
-    if (binding === undefined) return {};
+    if (binding === undefined) return;
     if (binding.active !== undefined) await this.cancel({ sessionId: params.sessionId });
     await (await this.getBridge()).request(
       "closeSession",
@@ -258,13 +277,12 @@ export class HeadlessZCodeSessionService implements SessionService {
     );
     await binding.subscription.dispose();
     this.sessions.delete(params.sessionId);
-    return {};
   }
 
   async setSessionMode(
-    params: acp.SetSessionModeRequest,
-    context?: acp.AgentContext,
-  ): Promise<acp.SetSessionModeResponse> {
+    params: { sessionId: string; modeId: string },
+    interaction?: SessionInteraction,
+  ): Promise<void> {
     if (!MODE_OPTIONS.some((mode) => mode.id === params.modeId)) {
       throw new AdapterError("INVALID_CONFIGURATION", `Unknown ZCode mode: ${params.modeId}`);
     }
@@ -277,19 +295,18 @@ export class HeadlessZCodeSessionService implements SessionService {
     );
     binding.settings = snapshot.settings;
     binding.snapshot = snapshot;
-    if (context !== undefined) {
-      await context.notify("session/update", {
-        sessionId: binding.sessionId,
-        update: { sessionUpdate: "current_mode_update", currentModeId: params.modeId },
+    if (interaction !== undefined) {
+      await interaction.notify(binding.sessionId, {
+        sessionUpdate: "current_mode_update",
+        currentModeId: params.modeId,
       });
     }
-    return {};
   }
 
   async setSessionConfigOption(
-    params: acp.SetSessionConfigOptionRequest,
-    context?: acp.AgentContext,
-  ): Promise<acp.SetSessionConfigOptionResponse> {
+    params: { sessionId: string; configId: string; value: unknown; type?: string },
+    interaction?: SessionInteraction,
+  ): Promise<{ configOptions: SessionConfigOption[] }> {
     const binding = this.requireSession(params.sessionId);
     if (params.configId === MODEL_CONFIG_ID && !("type" in params)) {
       const selected = binding.settings.model.available.find(
@@ -332,19 +349,16 @@ export class HeadlessZCodeSessionService implements SessionService {
       throw new AdapterError("INVALID_CONFIGURATION", `Unknown config option: ${params.configId}`);
     }
     const options = configOptions(binding.settings);
-    if (context !== undefined) {
-      await context.notify("session/update", {
-        sessionId: binding.sessionId,
-        update: { sessionUpdate: "config_option_update", configOptions: options },
+    if (interaction !== undefined) {
+      await interaction.notify(binding.sessionId, {
+        sessionUpdate: "config_option_update",
+        configOptions: options,
       });
     }
     return { configOptions: options };
   }
 
-  async authenticate(params: acp.AuthenticateRequest): Promise<acp.AuthenticateResponse> {
-    if (params.methodId !== AUTH_METHOD_ID) {
-      throw new AdapterError("INVALID_CONFIGURATION", `Unknown auth method: ${params.methodId}`);
-    }
+  async authenticate(): Promise<void> {
     const runtime = await discoverRuntime(this.discoveryOptions);
     const smoke = await runRuntimeSmoke(
       runtime,
@@ -353,10 +367,9 @@ export class HeadlessZCodeSessionService implements SessionService {
     if (smoke.authentication !== "present") {
       throw new AdapterError("AUTH_REQUIRED", "ZCode login has not completed");
     }
-    return {};
   }
 
-  async logout(_params: acp.LogoutRequest): Promise<acp.LogoutResponse> {
+  async logout(): Promise<void> {
     const runtime = await discoverRuntime(this.discoveryOptions);
     assertRuntimeSupported(runtime);
     const result = await runBundledCliCommand(
@@ -367,14 +380,13 @@ export class HeadlessZCodeSessionService implements SessionService {
     if (result.exitCode !== 0) {
       throw new AdapterError("NATIVE_PROTOCOL_ERROR", "ZCode logout failed");
     }
-    return {};
   }
 
   async prompt(
-    params: acp.PromptRequest,
-    context: acp.AgentContext,
+    params: { sessionId: string; prompt: PromptContentBlock[] },
+    interaction: SessionInteraction,
     signal: AbortSignal,
-  ): Promise<acp.PromptResponse> {
+  ): Promise<PromptResult> {
     const binding = this.sessions.get(params.sessionId);
     if (binding === undefined) {
       throw new AdapterError("SESSION_NOT_FOUND", `Unknown session: ${params.sessionId}`);
@@ -384,9 +396,9 @@ export class HeadlessZCodeSessionService implements SessionService {
     }
 
     const prompt = nativePrompt(params.prompt);
-    const completion = Promise.withResolvers<acp.PromptResponse>();
+    const completion = Promise.withResolvers<PromptResult>();
     const turn: ActiveTurn = {
-      context,
+      interaction,
       resolve: completion.resolve,
       reject: completion.reject,
       tools: new Map(),
@@ -398,7 +410,7 @@ export class HeadlessZCodeSessionService implements SessionService {
     signal.addEventListener("abort", abort, { once: true });
 
     try {
-      await this.notifySessionMetadata(context, binding.sessionId, binding.snapshot);
+      await this.notifySessionMetadata(interaction, binding.sessionId, binding.snapshot);
       await (await this.getBridge()).request(
         "sendPrompt",
         {
@@ -422,13 +434,13 @@ export class HeadlessZCodeSessionService implements SessionService {
     }
   }
 
-  async cancel(params: acp.CancelNotification): Promise<void> {
+  async cancel(params: { sessionId: string }): Promise<void> {
     const binding = this.sessions.get(params.sessionId);
     const turn = binding?.active;
     if (binding === undefined || turn === undefined || turn.cancelled) return;
     turn.cancelled = true;
     await (await this.getBridge()).request(
-      "stopSession",
+      "cancelGeneration",
       { workspacePath: binding.workspacePath, sessionId: binding.sessionId },
       UnknownResultSchema,
     );
@@ -487,7 +499,7 @@ export class HeadlessZCodeSessionService implements SessionService {
   private async resumeSnapshot(
     cwd: string,
     sessionId: string,
-    mcpServers: acp.McpServer[],
+    mcpServers: McpServer[],
   ): Promise<SessionSnapshot> {
     const workspace = await resolveWorkspace(cwd);
     await this.initializeWorkspace(workspace.cwd);
@@ -512,6 +524,7 @@ export class HeadlessZCodeSessionService implements SessionService {
     if (previous !== undefined) {
       previous.settings = snapshot.settings;
       previous.snapshot = snapshot;
+      this.workspaceCommands.set(workspacePath, availableCommands(snapshot));
       return previous;
     }
     let binding: SessionBinding | undefined;
@@ -539,69 +552,52 @@ export class HeadlessZCodeSessionService implements SessionService {
       snapshot,
     };
     this.sessions.set(binding.sessionId, binding);
+    this.workspaceCommands.set(workspacePath, availableCommands(snapshot));
     for (const event of bufferedEvents) await this.handleDynamicEvent(binding, event);
     return binding;
   }
 
   private async notifySessionMetadata(
-    context: acp.AgentContext,
+    interaction: SessionInteraction,
     sessionId: string,
     snapshot: SessionSnapshot,
   ): Promise<void> {
-    await context.notify("session/update", {
-      sessionId,
-      update: {
-        sessionUpdate: "available_commands_update",
-        availableCommands: availableCommands(snapshot),
-      },
+    await interaction.notify(sessionId, {
+      sessionUpdate: "available_commands_update",
+      availableCommands: availableCommands(snapshot),
     });
-    await context.notify("session/update", {
-      sessionId,
-      update: {
-        sessionUpdate: "config_option_update",
-        configOptions: configOptions(snapshot.settings),
-      },
+    await interaction.notify(sessionId, {
+      sessionUpdate: "config_option_update",
+      configOptions: configOptions(snapshot.settings),
     });
-    await context.notify("session/update", {
-      sessionId,
-      update: {
-        sessionUpdate: "current_mode_update",
-        currentModeId: snapshot.settings.mode.current,
-      },
+    await interaction.notify(sessionId, {
+      sessionUpdate: "current_mode_update",
+      currentModeId: snapshot.settings.mode.current,
     });
-    await context.notify("session/update", {
-      sessionId,
-      update: {
-        sessionUpdate: "session_info_update",
-        ...(snapshot.session.title === undefined ? {} : { title: snapshot.session.title }),
-        ...(snapshot.session.updatedAt === undefined
-          ? {}
-          : { updatedAt: new Date(snapshot.session.updatedAt).toISOString() }),
-      },
+    await interaction.notify(sessionId, {
+      sessionUpdate: "session_info_update",
+      ...(snapshot.session.title === undefined ? {} : { title: snapshot.session.title }),
+      ...(snapshot.session.updatedAt === undefined
+        ? {}
+        : { updatedAt: new Date(snapshot.session.updatedAt).toISOString() }),
     });
     const usage = snapshot.runtime.contextUsage;
     if (usage !== undefined) {
-      await context.notify("session/update", {
-        sessionId,
-        update: {
-          sessionUpdate: "usage_update",
-          used: usage.used,
-          size: usage.size,
-          ...(usage.cost == null ? {} : { cost: usage.cost }),
-        },
+      await interaction.notify(sessionId, {
+        sessionUpdate: "usage_update",
+        used: usage.used,
+        size: usage.size,
+        ...(usage.cost == null ? {} : { cost: usage.cost }),
       });
     }
     if ((snapshot.todos?.length ?? 0) > 0) {
-      await context.notify("session/update", {
-        sessionId,
-        update: {
-          sessionUpdate: "plan",
-          entries: snapshot.todos!.map((todo) => ({
-            content: todo.content,
-            status: todo.status,
-            priority: todo.priority,
-          })),
-        },
+      await interaction.notify(sessionId, {
+        sessionUpdate: "plan",
+        entries: snapshot.todos!.map((todo) => ({
+          content: todo.content,
+          status: todo.status,
+          priority: todo.priority,
+        })),
       });
     }
   }
@@ -633,7 +629,7 @@ export class HeadlessZCodeSessionService implements SessionService {
       binding.settings = dynamic.snapshot.settings;
       binding.snapshot = dynamic.snapshot;
       if (turn !== undefined) {
-        await this.notifySessionMetadata(turn.context, binding.sessionId, dynamic.snapshot);
+        await this.notifySessionMetadata(turn.interaction, binding.sessionId, dynamic.snapshot);
       }
       return;
     }
@@ -680,54 +676,26 @@ export class HeadlessZCodeSessionService implements SessionService {
     turn: ActiveTurn,
     request: PermissionRequest,
   ): Promise<void> {
-    let mapped: acp.PermissionOption[];
+    let answer: NativePermissionAnswer;
     try {
-      mapped = request.options.map((option) => ({
-        optionId: option.optionId,
-        name: option.name,
-        kind: permissionKind(option.response),
-      } satisfies acp.PermissionOption));
-    } catch (error) {
-      await this.respondPermission(
-        binding,
-        request.requestId,
-        denyResponse(request, "Native permission options cannot be represented in ACP v1"),
-      );
-      throw error;
-    }
-    let response: PermissionResponse;
-    try {
-      const result = await turn.context.request<
-        acp.RequestPermissionResponse,
-        acp.RequestPermissionRequest
-      >("session/request_permission", {
-        sessionId: binding.sessionId,
-        toolCall: {
-          toolCallId: request.toolCallId,
-          title: request.reason || request.toolName,
-          kind: toolKind(request.toolName),
-          rawInput: request.input,
-        },
-        options: mapped,
-      });
-      const outcome = result.outcome;
-      if (outcome.outcome === "selected") {
+      const selection = await turn.interaction.requestPermission(request);
+      if (selection !== null) {
         const selected = request.options.find(
-          (option) => option.optionId === outcome.optionId,
+          (option) => option.optionId === selection.optionId,
         );
         if (selected === undefined) {
-          throw new AdapterError("NATIVE_PROTOCOL_ERROR", "ACP selected an unknown permission option");
+          throw new AdapterError("NATIVE_PROTOCOL_ERROR", "Client selected an unknown permission option");
         }
-        response = selected.response;
+        answer = { optionId: selected.optionId, response: selected.response };
       } else {
-        response = denyResponse(request, "ACP client cancelled the permission request");
+        answer = denyAnswer(request);
       }
     } catch (error) {
-      response = denyResponse(request, "ACP permission request failed");
-      await this.respondPermission(binding, request.requestId, response);
+      answer = denyAnswer(request);
+      await this.respondPermission(binding, request.requestId, answer);
       throw error;
     }
-    await this.respondPermission(binding, request.requestId, response);
+    await this.respondPermission(binding, request.requestId, answer);
   }
 
   private async handleUserInput(
@@ -735,10 +703,10 @@ export class HeadlessZCodeSessionService implements SessionService {
     turn: ActiveTurn | undefined,
     request: UserInputRequest,
   ): Promise<void> {
-    if (turn === undefined || !this.formElicitationSupported || request.questions === undefined) {
+    if (turn === undefined || request.questions === undefined) {
       await this.respondUserInput(binding, request.requestId, {
         action: "decline",
-        reason: "ACP client does not support form elicitation",
+        reason: "No active client can handle structured input",
       });
       if (turn !== undefined) {
         settleTurn(
@@ -746,79 +714,27 @@ export class HeadlessZCodeSessionService implements SessionService {
           "reject",
           new AdapterError(
             "INTERACTION_UNSUPPORTED",
-            "ZCode requested structured input but the ACP client cannot render form elicitation",
+            "ZCode requested structured input without an active client interaction",
           ),
         );
       }
       return;
     }
 
-    const properties: Record<string, acp.ElicitationPropertySchema> = {};
-    for (const [index, question] of request.questions.entries()) {
-      const key = `answer_${index}`;
-      const options = question.options.map((option) => ({
-        const: option.value,
-        title: option.label,
-        ...(option.description === undefined ? {} : { description: option.description }),
-      }));
-      properties[key] = question.multiSelect
-        ? {
-            type: "array",
-            title: question.header,
-            description: question.question,
-            items: { anyOf: options },
-            minItems: 1,
-          }
-        : {
-            type: "string",
-            title: question.header,
-            description: question.question,
-            oneOf: options,
-          };
-    }
-
     try {
-      const result = await turn.context.request<
-        acp.CreateElicitationResponse,
-        acp.CreateElicitationRequest
-      >("elicitation/create", {
-        mode: "form",
-        sessionId: binding.sessionId,
-        ...(request.toolCallId === undefined ? {} : { toolCallId: request.toolCallId }),
-        message: request.prompt ?? "ZCode needs additional input",
-        requestedSchema: {
-          type: "object",
-          properties,
-          required: Object.keys(properties),
-        },
-      });
-      if (result.action === "decline" || result.action === "cancel") {
+      const result = await turn.interaction.requestUserInput(request);
+      if (result.action !== "accept") {
         await this.respondUserInput(binding, request.requestId, { action: result.action });
         return;
       }
-      if (result.action !== "accept") {
-        throw new AdapterError(
-          "INTERACTION_UNSUPPORTED",
-          `Unsupported ACP elicitation action: ${result.action}`,
-        );
-      }
-      const content = (result.content ?? {}) as Record<string, acp.ElicitationContentValue>;
-      const answers = Object.fromEntries(request.questions.map((question, index) => {
-        const value = content[`answer_${index}`];
-        return [question.question, Array.isArray(value) ? value : value === undefined ? [] : [String(value)]];
-      }));
       await this.respondUserInput(binding, request.requestId, {
         action: "accept",
-        content: {
-          ...content,
-          answers,
-          ...(request.questions.length === 1 ? { answer: content.answer_0 } : {}),
-        },
+        content: result.content,
       });
     } catch (error) {
       await this.respondUserInput(binding, request.requestId, {
         action: "decline",
-        reason: "ACP elicitation failed",
+        reason: "Structured input request failed",
       });
       throw error;
     }
@@ -830,7 +746,7 @@ export class HeadlessZCodeSessionService implements SessionService {
     response: Record<string, unknown>,
   ): Promise<void> {
     await (await this.getBridge()).request(
-      "respondUserInput",
+      "respondStructuredInput",
       {
         workspacePath: binding.workspacePath,
         sessionId: binding.sessionId,
@@ -844,7 +760,7 @@ export class HeadlessZCodeSessionService implements SessionService {
   private async respondPermission(
     binding: SessionBinding,
     requestId: string,
-    response: PermissionResponse,
+    answer: NativePermissionAnswer,
   ): Promise<void> {
     await (await this.getBridge()).request(
       "respondPermission",
@@ -852,7 +768,8 @@ export class HeadlessZCodeSessionService implements SessionService {
         workspacePath: binding.workspacePath,
         sessionId: binding.sessionId,
         requestId,
-        response,
+        optionId: answer.optionId,
+        response: answer.response,
       },
       UnknownResultSchema,
     );
@@ -896,7 +813,7 @@ export class HeadlessZCodeSessionService implements SessionService {
         { workspacePath: binding.workspacePath, sessionId: binding.sessionId },
         TokenUsageSchema,
       );
-      const acpUsage: acp.Usage = {
+      const usageResult: NonNullable<PromptResult["usage"]> = {
         totalTokens: usage.totalTokens,
         inputTokens: usage.inputTokens,
         outputTokens: usage.outputTokens,
@@ -917,23 +834,20 @@ export class HeadlessZCodeSessionService implements SessionService {
       );
       binding.settings = snapshot.settings;
       binding.snapshot = snapshot;
-      await this.notifySessionMetadata(turn.context, binding.sessionId, snapshot);
+      await this.notifySessionMetadata(turn.interaction, binding.sessionId, snapshot);
       settleTurn(turn, "resolve", {
         stopReason: stopReason(event.payload, turn.cancelled),
-        usage: acpUsage,
+        usage: usageResult,
       });
       return;
     }
     if (event.type === "session.titleUpdated") {
       const title = stringValue(event.payload.title);
       if (title !== undefined) {
-        await turn.context.notify("session/update", {
-          sessionId: binding.sessionId,
-          update: {
-            sessionUpdate: "session_info_update",
-            title,
-            updatedAt: new Date(event.timestamp).toISOString(),
-          },
+        await turn.interaction.notify(binding.sessionId, {
+          sessionUpdate: "session_info_update",
+          title,
+          updatedAt: new Date(event.timestamp).toISOString(),
         });
       }
       return;
@@ -963,13 +877,10 @@ export class HeadlessZCodeSessionService implements SessionService {
     const messageId = stringValue(payload.assistantMessageId);
     if (kind === "text_delta" || kind === "reasoning_delta") {
       if (!delta) return;
-      await turn.context.notify("session/update", {
-        sessionId: binding.sessionId,
-        update: {
-          sessionUpdate: kind === "text_delta" ? "agent_message_chunk" : "agent_thought_chunk",
-          content: { type: "text", text: delta },
-          ...(messageId === undefined ? {} : { messageId }),
-        },
+      await turn.interaction.notify(binding.sessionId, {
+        sessionUpdate: kind === "text_delta" ? "agent_message_chunk" : "agent_thought_chunk",
+        content: { type: "text", text: delta },
+        ...(messageId === undefined ? {} : { messageId }),
       });
       return;
     }
@@ -1011,16 +922,13 @@ export class HeadlessZCodeSessionService implements SessionService {
   ): Promise<void> {
     if (tool.created) return;
     tool.created = true;
-    await turn.context.notify("session/update", {
-      sessionId: binding.sessionId,
-      update: {
-        sessionUpdate: "tool_call",
-        toolCallId: tool.id,
-        title: tool.name,
-        kind: toolKind(tool.name),
-        status: "pending",
-        rawInput: input ?? parseJson(tool.rawInputText),
-      },
+    await turn.interaction.notify(binding.sessionId, {
+      sessionUpdate: "tool_call",
+      toolCallId: tool.id,
+      title: tool.name,
+      kind: toolKind(tool.name),
+      status: "pending",
+      rawInput: input ?? parseJson(tool.rawInputText),
     });
   }
 
@@ -1077,11 +985,11 @@ export class HeadlessZCodeSessionService implements SessionService {
   private async updateTool(
     binding: SessionBinding,
     turn: ActiveTurn,
-    update: acp.ToolCallUpdate,
+    update: Record<string, unknown>,
   ): Promise<void> {
-    await turn.context.notify("session/update", {
-      sessionId: binding.sessionId,
-      update: { sessionUpdate: "tool_call_update", ...update },
+    await turn.interaction.notify(binding.sessionId, {
+      sessionUpdate: "tool_call_update",
+      ...update,
     });
   }
 }
@@ -1096,7 +1004,7 @@ interface NativeAttachment {
   sizeBytes?: number;
 }
 
-export function nativePrompt(blocks: acp.ContentBlock[]): {
+export function nativePrompt(blocks: PromptContentBlock[]): {
   content: string;
   attachments: NativeAttachment[];
 } {
@@ -1201,14 +1109,14 @@ function assertNoAdditionalDirectories(directories: string[] | undefined): void 
   }
 }
 
-function sessionSetupResponse(snapshot: SessionSnapshot): acp.NewSessionResponse {
+function sessionSetupResponse(snapshot: SessionSnapshot): SessionSetup {
   return {
     sessionId: snapshot.session.sessionId,
     ...sessionState(snapshot),
   };
 }
 
-function sessionState(snapshot: SessionSnapshot): acp.LoadSessionResponse {
+function sessionState(snapshot: SessionSnapshot): SessionState {
   return {
     modes: {
       currentModeId: snapshot.settings.mode.current,
@@ -1218,8 +1126,8 @@ function sessionState(snapshot: SessionSnapshot): acp.LoadSessionResponse {
   };
 }
 
-function configOptions(settings: SessionSettings): acp.SessionConfigOption[] {
-  const result: acp.SessionConfigOption[] = [
+export function configOptions(settings: SessionSettings): SessionConfigOption[] {
+  const result: SessionConfigOption[] = [
     {
       id: MODEL_CONFIG_ID,
       name: "Model",
@@ -1255,7 +1163,7 @@ function modelValue(model: { providerId: string; modelId: string; variant?: stri
   return JSON.stringify([model.providerId, model.modelId, model.variant ?? null]);
 }
 
-function availableCommands(snapshot: SessionSnapshot): acp.AvailableCommand[] {
+export function availableCommands(snapshot: SessionSnapshot): AvailableCommand[] {
   return snapshot.slashCommands.map((command) => ({
     name: command.name,
     description: command.description,
@@ -1265,7 +1173,9 @@ function availableCommands(snapshot: SessionSnapshot): acp.AvailableCommand[] {
   }));
 }
 
-function permissionKind(response: PermissionResponse): acp.PermissionOptionKind {
+export function permissionKind(
+  response: PermissionResponse,
+): "allow_once" | "allow_always" | "reject_once" | "reject_always" {
   const persistent = (response.permissionUpdates?.length ?? 0) > 0;
   if (response.decision === "allow") return persistent ? "allow_always" : "allow_once";
   if (response.decision === "deny") return persistent ? "reject_always" : "reject_once";
@@ -1275,14 +1185,20 @@ function permissionKind(response: PermissionResponse): acp.PermissionOptionKind 
   );
 }
 
-function denyResponse(request: PermissionRequest, reason: string): PermissionResponse {
-  return request.options.find((option) => option.response.decision === "deny")?.response ?? {
-    decision: "deny",
-    reason,
-  };
+function denyAnswer(request: PermissionRequest): NativePermissionAnswer {
+  const option = request.options.find((candidate) => candidate.response.decision === "deny");
+  if (option === undefined) {
+    throw new AdapterError(
+      "NATIVE_PROTOCOL_ERROR",
+      "ZCode permission request does not provide a native deny option",
+    );
+  }
+  return { optionId: option.optionId, response: option.response };
 }
 
-function toolKind(name: string): acp.ToolKind {
+export function toolKind(
+  name: string,
+): "read" | "edit" | "delete" | "move" | "search" | "execute" | "fetch" | "think" | "other" {
   const normalized = name.toLowerCase();
   if (normalized.includes("read")) return "read";
   if (normalized.includes("write") || normalized.includes("edit")) return "edit";
@@ -1299,7 +1215,9 @@ function toolKind(name: string): acp.ToolKind {
   return "other";
 }
 
-function persistedToolStatus(status: string | undefined): acp.ToolCallStatus {
+function persistedToolStatus(
+  status: string | undefined,
+): "pending" | "in_progress" | "completed" | "failed" {
   switch (status) {
     case "pending":
       return "pending";
@@ -1317,7 +1235,7 @@ function persistedToolStatus(status: string | undefined): acp.ToolCallStatus {
   }
 }
 
-function textToolContent(value: unknown): acp.ToolCallContent[] {
+function textToolContent(value: unknown): Array<Record<string, unknown>> {
   const record = asRecord(value);
   const content = typeof record.content === "string"
     ? record.content
@@ -1331,7 +1249,7 @@ function textToolContent(value: unknown): acp.ToolCallContent[] {
 function stopReason(
   payload: Record<string, unknown>,
   cancelled: boolean,
-): acp.StopReason {
+): PromptResult["stopReason"] {
   if (cancelled) return "cancelled";
   switch (stringValue(payload.resultType)) {
     case "success":
@@ -1359,12 +1277,12 @@ function stopReason(
 function settleTurn(
   turn: ActiveTurn,
   action: "resolve" | "reject",
-  value: acp.PromptResponse | unknown,
+  value: PromptResult | unknown,
 ): void {
   if (turn.settled) return;
   turn.settled = true;
   if (turn.cancelTimer !== undefined) clearTimeout(turn.cancelTimer);
-  if (action === "resolve") turn.resolve(value as acp.PromptResponse);
+  if (action === "resolve") turn.resolve(value as PromptResult);
   else turn.reject(value);
 }
 

@@ -1,30 +1,29 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { MessageChannel, Worker } from "node:worker_threads";
-import { pathToFileURL } from "node:url";
 import { randomUUID } from "node:crypto";
+import { NullLogger } from "../src/diagnostics/logger.ts";
+import { discoverRuntime } from "../src/zcode/discovery/discover.ts";
+import { ZCodeHostBridge } from "../src/zcode/host/bridge.ts";
+import { z } from "zod";
 
 if (process.env.ZCODE_ACP_ENABLE_CONTRACT_PROBE !== "1") {
   throw new Error("Set ZCODE_ACP_ENABLE_CONTRACT_PROBE=1 to run the native host probe");
 }
 
-const resources = process.env.ZCODE_ACP_ZCODE_RESOURCES
-  ?? "/Applications/ZCode.app/Contents/Resources";
-const hostRoot = join(resources, "app.asar", "out", "host");
-const hostIndexUrl = pathToFileURL(join(hostRoot, "index.js")).href;
-const rpcModule = await import(pathToFileURL(join(hostRoot, "chunk-HAEWO5CB.js")).href);
-
+const runtime = await discoverRuntime();
+if (runtime.hostContract === undefined) {
+  throw new Error(`No investigated host contract: ${runtime.compatibilityReason}`);
+}
 const workspacePath = await mkdtemp(join(tmpdir(), "zcode-acp-host-probe-"));
-const worker = new Worker(new URL("./zcode-host-worker.mjs", import.meta.url), {
-  workerData: { hostIndexUrl },
-  stdout: true,
-  stderr: true,
-});
-const { port1, port2 } = new MessageChannel();
-const protocol = new rpcModule.g(port1);
-const client = new rpcModule.i(protocol);
-const service = rpcModule.j.toService(client.getChannel("zcode-agent"));
+const bridge = ZCodeHostBridge.start(
+  runtime,
+  new NullLogger(),
+  process.env,
+  { allowDevelopmentCandidate: true },
+);
+const AnySchema = z.unknown();
+const call = (method, params) => bridge.request(method, params, AnySchema, 60_000);
 
 const redact = (value) => {
   if (Array.isArray(value)) return value.map(redact);
@@ -41,75 +40,63 @@ const log = (label, value) => {
   process.stdout.write(`${JSON.stringify({ label, value: redact(value) })}\n`);
 };
 
-worker.stdout.resume();
-worker.stderr.resume();
-worker.on("error", (error) => log("worker.error", { message: error.message, stack: error.stack }));
-
 try {
-  worker.postMessage({
-    data: {
-      type: "init-local",
-      deviceMid: "zcode-acp-headless-probe",
-      workspacePath,
-      agentSpawnFallbackCwd: workspacePath,
-    },
-    ports: [port2],
-  }, [port2]);
-
   const warmupMs = Number(process.env.ZCODE_ACP_PROBE_WARMUP_MS ?? "0");
   if (warmupMs > 0) {
     await new Promise((resolve) => setTimeout(resolve, warmupMs));
   }
 
-  const initialized = await service.initialize({ workspacePath });
+  const initialized = await call("initialize", { workspacePath });
   log("initialize", initialized);
-  const state = await service.readWorkspaceState({ workspacePath });
+  const state = await call("readWorkspaceState", { workspacePath });
   log("readWorkspaceState", state);
-  const snapshot = await service.createSession({
+  const snapshot = await call("createSession", {
     workspacePath,
     persistence: "deferred",
   });
   log("createSession", snapshot);
   const sessionId = snapshot.session.sessionId;
-  log("listSessions", await service.listSessions({
+  log("listSessions", await call("listSessions", {
     workspacePath,
     includeArchived: false,
     limit: 20,
   }));
-  log("readSession", await service.readSession({
+  log("readSession", await call("readSession", {
     workspacePath,
     sessionId,
     deliveryKind: "desktop-continuous",
     messageLimit: 100,
     afterSeq: 0,
   }));
-  log("readSessionMessages", await service.readSessionMessages({
+  log("readSessionMessages", await call("readSessionMessages", {
     workspacePath,
     sessionId,
     limit: 100,
   }));
-  log("resumeSession", await service.resumeSession({ workspacePath, sessionId }));
+  log("resumeSession", await call("resumeSession", { workspacePath, sessionId }));
   const terminal = Promise.withResolvers();
-  const subscription = service.onDynamicSessionEvent({
+  const subscription = await bridge.subscribe({
     workspacePath,
     sessionId,
     deliveryKind: "desktop-continuous",
     includeSnapshot: true,
-  })((event) => {
+  }, (event) => {
     log("event", event);
     if (event.type === "permission.request") {
       const option = event.request.options.find((candidate) =>
         candidate.response?.decision === "deny"
       );
-      void service.respondPermission({
+      const selected = option ?? event.request.options[0];
+      void call("respondPermission", {
         workspacePath,
         sessionId,
         requestId: event.request.requestId,
-        response: option?.response ?? { decision: "deny", reason: "Contract probe" },
+        optionId: selected.optionId,
+        response: selected.response,
       });
     }
     if (event.type === "userInput.request") {
-      void service.respondUserInput({
+      void call("respondStructuredInput", {
         workspacePath,
         sessionId,
         requestId: event.request.requestId,
@@ -117,7 +104,7 @@ try {
       });
     }
     if (event.type === "providerRuntimeHeaders.request") {
-      void service.respondProviderRuntimeHeaders({
+      void call("respondProviderRuntimeHeaders", {
         workspacePath,
         sessionId,
         requestId: event.request.requestId,
@@ -130,7 +117,7 @@ try {
     }
   });
   const inputId = randomUUID();
-  const ack = await service.sendPrompt({
+  const ack = await call("sendPrompt", {
     workspacePath,
     sessionId,
     inputId,
@@ -141,9 +128,8 @@ try {
     terminal.promise,
     new Promise((_, reject) => setTimeout(() => reject(new Error("Prompt probe timed out")), 120_000)),
   ]);
-  subscription.dispose();
+  await subscription.dispose();
 } finally {
-  protocol.disconnect();
-  await worker.terminate();
+  await bridge.close();
   await rm(workspacePath, { recursive: true, force: true });
 }

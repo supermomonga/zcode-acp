@@ -3,10 +3,15 @@ import { homedir } from "node:os";
 import { isAbsolute, join, relative, sep } from "node:path";
 import { z } from "zod";
 import { AdapterError } from "../../domain/errors.ts";
+import {
+  hostContractMismatch,
+  resolveHostContractPaths,
+} from "./host-contract.ts";
 import { assessCompatibility } from "./manifest.ts";
 import type {
   BundleMetadata,
   DiscoveredRuntime,
+  HostContractDescriptor,
   RuntimeIdentity,
   RuntimePaths,
   RuntimeSmokeResult,
@@ -88,14 +93,29 @@ export async function discoverRuntime(
     metadataSha256,
     bundle,
   };
-  const compatibility = assessCompatibility(identity);
+  const assessment = assessCompatibility(identity);
+  const host = assessment.hostContract === undefined
+    ? undefined
+    : await resolveHostContract(
+        paths,
+        assessment.hostContract,
+        options.environment ?? process.env,
+      );
+  const hostMismatch = host === undefined
+    ? undefined
+    : hostContractMismatch(assessment.hostContract!, {
+        hostIndexSha256: host.hostIndexSha256,
+        hostRpcModuleSha256: host.hostRpcModuleSha256,
+        exports: host.rpcExports,
+      });
   const rootStat = await stat(installRoot);
 
   return {
     paths,
     identity,
-    compatibility: compatibility.status,
-    compatibilityReason: compatibility.reason,
+    ...(host === undefined ? {} : { hostContract: host }),
+    compatibility: hostMismatch === undefined ? assessment.status : "unsupported",
+    compatibilityReason: hostMismatch ?? assessment.reason,
     writableInstallRoot: (rootStat.mode & 0o022) !== 0,
   };
 }
@@ -137,6 +157,7 @@ export function assertRuntimeSupported(runtime: DiscoveredRuntime): void {
       appBuild: runtime.identity.appBuild,
       cliVersion: runtime.identity.cliVersion,
       compatibility: runtime.compatibility,
+      hostContract: runtime.hostContract?.descriptor.id,
     });
   }
 }
@@ -183,11 +204,6 @@ function runtimePaths(installRoot: string, platform: NodeJS.Platform): RuntimePa
       appMetadata: join(installRoot, "Contents/Info.plist"),
       appPackage: join(installRoot, "Contents/Resources/app.asar/package.json"),
       hostArchive: join(installRoot, "Contents/Resources/app.asar"),
-      hostIndex: join(installRoot, "Contents/Resources/app.asar/out/host/index.js"),
-      hostRpcModule: join(
-        installRoot,
-        "Contents/Resources/app.asar/out/host/chunk-HAEWO5CB.js",
-      ),
     };
   }
 
@@ -199,8 +215,6 @@ function runtimePaths(installRoot: string, platform: NodeJS.Platform): RuntimePa
       metadata: join(installRoot, "resources/glm/.node-bundle-meta.json"),
       appPackage: join(installRoot, "resources/app.asar/package.json"),
       hostArchive: join(installRoot, "resources/app.asar"),
-      hostIndex: join(installRoot, "resources/app.asar/out/host/index.js"),
-      hostRpcModule: join(installRoot, "resources/app.asar/out/host/chunk-HAEWO5CB.js"),
     };
   }
 
@@ -212,8 +226,6 @@ function runtimePaths(installRoot: string, platform: NodeJS.Platform): RuntimePa
       metadata: join(installRoot, "resources/glm/.node-bundle-meta.json"),
       appPackage: join(installRoot, "resources/app.asar/package.json"),
       hostArchive: join(installRoot, "resources/app.asar"),
-      hostIndex: join(installRoot, "resources/app.asar/out/host/index.js"),
-      hostRpcModule: join(installRoot, "resources/app.asar/out/host/chunk-HAEWO5CB.js"),
     };
   }
 
@@ -247,6 +259,68 @@ async function sha256(path: string): Promise<string> {
   const hasher = new Bun.CryptoHasher("sha256");
   hasher.update(await Bun.file(path).arrayBuffer());
   return hasher.digest("hex");
+}
+
+async function resolveHostContract(
+  paths: RuntimePaths,
+  descriptor: HostContractDescriptor,
+  environment: NodeJS.ProcessEnv,
+): Promise<NonNullable<DiscoveredRuntime["hostContract"]>> {
+  const { hostIndex, hostRpcModule } = resolveHostContractPaths(
+    paths.installRoot,
+    paths.hostArchive,
+    descriptor,
+  );
+
+  const script = String.raw`
+const fs = require("node:fs");
+const crypto = require("node:crypto");
+const { pathToFileURL } = require("node:url");
+const hash = path => crypto.createHash("sha256").update(fs.readFileSync(path)).digest("hex");
+(async () => {
+  const rpc = await import(pathToFileURL(${JSON.stringify(hostRpcModule)}).href);
+  process.stdout.write(JSON.stringify({
+    hostIndexSha256: hash(${JSON.stringify(hostIndex)}),
+    hostRpcModuleSha256: hash(${JSON.stringify(hostRpcModule)}),
+    exports: Object.keys(rpc),
+  }));
+})().catch(error => {
+  process.stderr.write(error instanceof Error ? error.stack ?? error.message : String(error));
+  process.exit(1);
+});`;
+  const child = Bun.spawn([paths.executable, "-e", script], {
+    cwd: paths.installRoot,
+    env: { ...environment, ELECTRON_RUN_AS_NODE: "1" },
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ]);
+  if (exitCode !== 0) {
+    throw new AdapterError(
+      "RUNTIME_DISCOVERY_FAILED",
+      "Failed to inspect the manifest-selected ZCode host contract",
+      { contract: descriptor.id, exitCode, stderr: stderr.slice(-1_000) },
+    );
+  }
+
+  const inspection = z.object({
+    hostIndexSha256: z.string().regex(/^[0-9a-f]{64}$/),
+    hostRpcModuleSha256: z.string().regex(/^[0-9a-f]{64}$/),
+    exports: z.array(z.string()),
+  }).strict().parse(JSON.parse(stdout));
+  return {
+    descriptor,
+    hostIndex,
+    hostRpcModule,
+    hostIndexSha256: inspection.hostIndexSha256,
+    hostRpcModuleSha256: inspection.hostRpcModuleSha256,
+    rpcExports: inspection.exports,
+  };
 }
 
 async function readAppIdentity(

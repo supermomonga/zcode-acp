@@ -18,9 +18,10 @@ describe("ZCode compatibility manifest", () => {
           source: "apps/zcode-cli/packages/cli/dist/zcode.cjs",
         },
       }),
-    ).toEqual({
+    ).toMatchObject({
       status: "supported",
       reason: "All compatibility release gates passed",
+      hostContract: { id: "zcode-host-3.3.6" },
     });
   });
 
@@ -58,9 +59,35 @@ describe("ZCode compatibility manifest", () => {
           source: "apps/zcode-cli/packages/cli/dist/zcode.cjs",
         },
       }),
-    ).toEqual({
+    ).toMatchObject({
       status: "supported",
       reason: "All compatibility release gates passed",
+      hostContract: { id: "zcode-host-3.3.6" },
+    });
+  });
+
+  test("recognizes the release-gated ZCode 3.8.1 macOS artifact", () => {
+    expect(
+      assessCompatibility({
+        platform: "darwin-arm64",
+        appVersion: "3.8.1",
+        appBuild: "3.8.1.5310",
+        cliVersion: "0.16.3",
+        cliSha256: "9318f60fb8c2c3bc83ce62da10220ebcdc9a99786df0a9abb1a4435ba66e4274",
+        metadataSha256: "3cb76cfe74da2c647e077cbd35a0868034769ca04212f5ef8ac87fccb8ba4660",
+        bundle: {
+          runtime: "electron-node",
+          entry: "zcode.cjs",
+          platform: "darwin-arm64",
+          source: "apps/zcode-cli/packages/cli/dist/zcode.cjs",
+        },
+      }),
+    ).toMatchObject({
+      status: "supported",
+      hostContract: {
+        id: "zcode-host-3.8.1",
+        hostRpcModuleRelativePath: "out/host/chunk-LVLFJXEE.js",
+      },
     });
   });
 });

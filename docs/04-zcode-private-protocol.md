@@ -2,7 +2,7 @@
 
 ## 1. Scope
 
-対象はZCode 3.3.6 / CLI 0.15.2の`app.asar/out/host`に含まれる公式local host serviceです。公開APIではないため、app/CLI/metadata hashが一致するartifactにだけ適用します。
+対象はcompatibility manifestに登録されたZCode 3.3.6 / CLI 0.15.2およびZCode 3.8.1 / CLI 0.16.3の`app.asar/out/host`に含まれる公式local host serviceです。公開APIではないため、app/build/CLI/metadata/host hashが完全一致するartifactにだけ適用します。
 
 `zcode.cjs app-server --stdio`の直接protocolも調査しましたが、desktopのmodel-provider registryを持たないためproduction経路には採用していません。
 
@@ -11,7 +11,7 @@
 1. インストール済みZCodeのElectron executableを`ELECTRON_RUN_AS_NODE=1`で起動
 2. `worker_threads.Worker`内で公式`out/host/index.js`をimport
 3. Electron utility-processの`process.parentPort` event shapeをNode `MessagePort`へadapter
-4. 公式RPC moduleの`zcode-agent` service channelへ接続
+4. manifestのhost contract descriptorが指定するRPC module/exportとservice channelへ接続
 5. allowlist済みservice methodだけを内部NDJSON bridgeへ公開
 
 bridgeのsuccess responseは、公式methodが`undefined`を返す場合も`result: null`を明示します。field省略はrequest相関を壊すため禁止です。公式hostのstdout/stderrはadapterのACP stdoutへ流しません。
@@ -31,21 +31,18 @@ bridgeのsuccess responseは、公式methodが`undefined`を返す場合も`resu
 - malformed/unknown responseはfail closed
 - late responseはpending requestがなければ無視
 
-## 4. Production method allowlist
+## 4. Versioned host contracts
 
-| Method | Purpose |
-| --- | --- |
-| `initialize` | workspaceとprovider readiness |
-| `readWorkspaceState` | current modelとcatalog確認 |
-| `createSession` | immediate native session作成 |
-| `sendPrompt` | prompt acknowledgement |
-| `stopSession` | ACP cancel |
-| `closeSession` | session cleanup |
-| `respondPermission` | native permission response |
-| `respondUserInput` | unsupported workflowのdecline |
-| `respondProviderRuntimeHeaders` | interactive recovery failure response |
-| `disposeWorkspace` | workspace cleanup |
-| internal `__subscribe` / `__unsubscribe` | dynamic session event subscription |
+| Semantic operation | 3.3.6 contract | 3.8.1 contract |
+| --- | --- | --- |
+| service channel | `zcode-agent` | common: `zcode-agent`; task interaction: `zcode-task` |
+| cancel | `stopSession({sessionId})` | `stopGeneration({taskId})` |
+| structured input | `respondUserInput({sessionId, requestId, response})` | `respondElicitation({taskId, requestId, action, content})` |
+| permission | `respondPermission({sessionId, requestId, response})` | `respondPermission({taskId, requestId, optionId})` |
+
+`initialize`、`readWorkspaceState`、`createSession`、`sendPrompt`、`closeSession`、`respondProviderRuntimeHeaders`、`disposeWorkspace`とsubscriptionは共通agent serviceで扱います。このlistおよびdescriptorで宣言したtask操作以外のprivate methodはRPC経由で呼べません。
+
+3.8.1 descriptorはhost index `out/host/index.js`とRPC module `out/host/chunk-LVLFJXEE.js`を固定し、SHA-256と必要な`g/i/j` exportをworker起動前に検証します。pathがinstall rootを逸脱する場合もfail closedです。
 
 このlist以外のprivate methodはRPC経由で呼べません。
 
@@ -94,11 +91,11 @@ tool inputはdeltaを結合してJSON parseを試し、raw input/outputもACP up
 
 ### Permission
 
-native optionの`optionId`、name、responseを保持し、decisionとpersistent updateの有無からACPのallow/reject once/alwaysへ写像します。ACP clientが返したIDが元optionに存在しなければ拒否します。client cancel/error時はnative denyをexactly onceで返します。
+native optionの`optionId`、name、意味上のresponseを保持し、decisionとpersistent updateの有無からACPのallow/reject once/alwaysへ写像します。ACP clientが返したIDが元optionに存在しなければ拒否します。client cancel/error/disconnect時は実在するdeny optionを選び、3.3.6にはresponse、3.8.1にはoption IDをexactly onceで返します。
 
 ### Structured user input
 
-ACP v1 stable coreに同等の汎用client methodがありません。permission APIや空文字で代替せず、nativeへ`action: decline`を返し、turnを`INTERACTION_UNSUPPORTED`で停止します。
+form elicitation capabilityを持つACP clientには複数質問・multiple selectを保持して`elicitation/create`へ変換します。3.8.1ではclient応答を`action`と`content`へ平坦化し、`respondElicitation`へ渡します。form非対応clientではpermission APIや空文字で代替せず、実際のdecline応答を返してturnを`INTERACTION_UNSUPPORTED`で停止します。
 
 ### Provider runtime headers
 
@@ -124,6 +121,8 @@ platform + architecture
 + CLI version
 + zcode.cjs SHA-256
 + .node-bundle-meta.json SHA-256
++ host index SHA-256
++ host RPC module path + SHA-256 + required exports
 ```
 
 未知identityにunsafe bypassやsystem runtime fallbackはありません。

@@ -48,7 +48,9 @@ import { createInterface } from "node:readline";
 
 const hostIndex = process.env.ZCODE_ACP_HOST_INDEX;
 const hostRpcModule = process.env.ZCODE_ACP_HOST_RPC_MODULE;
-if (!hostIndex || !hostRpcModule) throw new Error("Missing ZCode host module paths");
+const hostContractJson = process.env.ZCODE_ACP_HOST_CONTRACT;
+if (!hostIndex || !hostRpcModule || !hostContractJson) throw new Error("Missing ZCode host contract");
+const hostContract = JSON.parse(hostContractJson);
 
 const workerSource = ${JSON.stringify(ZCODE_HOST_WORKER_SOURCE)};
 
@@ -62,16 +64,25 @@ worker.stderr.resume();
 
 const rpc = await import(pathToFileURL(hostRpcModule).href);
 const ports = new MessageChannel();
-const protocol = new rpc.g(ports.port1);
-const client = new rpc.i(protocol);
-const service = rpc.j.toService(client.getChannel("zcode-agent"));
+const protocol = new rpc[hostContract.rpcExports.protocol](ports.port1);
+const client = new rpc[hostContract.rpcExports.client](protocol);
+const serviceFactory = rpc[hostContract.rpcExports.service];
+const services = new Map(Object.entries(hostContract.serviceChannels).map(([name, channel]) => [
+  name,
+  serviceFactory.toService(client.getChannel(channel))
+]));
+const agentService = services.get("agent");
+if (!agentService) throw new Error("ZCode host contract has no agent service");
 const subscriptions = new Map();
-const allowed = new Set([
+const commonAgentMethods = new Set([
   "initialize", "readWorkspaceState", "createSession", "resumeSession", "listSessions",
-  "readSession", "readSessionMessages", "readSessionEvents", "sendPrompt", "stopSession",
-  "closeSession", "setModel", "setThoughtLevel", "setMode", "respondPermission",
-  "getTaskTokenUsage", "respondUserInput", "respondProviderRuntimeHeaders", "disposeWorkspace"
+  "readSession", "readSessionMessages", "readSessionEvents", "sendPrompt",
+  "closeSession", "setModel", "setThoughtLevel", "setMode", "getTaskTokenUsage",
+  "respondProviderRuntimeHeaders", "disposeWorkspace"
 ]);
+const contractOperations = new Set(Object.values(hostContract.operations).map(operation =>
+  operation.service + ":" + operation.method
+));
 let shuttingDown = false;
 
 function write(value) {
@@ -86,7 +97,7 @@ async function dispatch(message) {
       const subscriptionId = message.params?.subscriptionId;
       if (typeof subscriptionId !== "string" || !subscriptionId) throw new Error("Invalid subscription id");
       if (subscriptions.has(subscriptionId)) throw new Error("Duplicate subscription id");
-      const disposable = service.onDynamicSessionEvent(message.params.target)(event => {
+      const disposable = agentService.onDynamicSessionEvent(message.params.target)(event => {
         write({ method: "event", params: { subscriptionId, event } });
       });
       subscriptions.set(subscriptionId, disposable);
@@ -100,8 +111,15 @@ async function dispatch(message) {
       write({ id, result: { unsubscribed: true } });
       return;
     }
-    if (!allowed.has(message.method)) throw new Error("Unsupported bridge method: " + message.method);
-    const result = await service[message.method](message.params);
+    if (message.method !== "__call") throw new Error("Unsupported bridge method: " + message.method);
+    const serviceName = message.params?.service;
+    const nativeMethod = message.params?.method;
+    const service = services.get(serviceName);
+    if (!service) throw new Error("Unsupported bridge service: " + serviceName);
+    const allowed = serviceName === "agent" && commonAgentMethods.has(nativeMethod) ||
+      contractOperations.has(serviceName + ":" + nativeMethod);
+    if (!allowed) throw new Error("Unsupported native bridge method: " + serviceName + ":" + nativeMethod);
+    const result = await service[nativeMethod](message.params?.params);
     write({ id, result: result === undefined ? null : result });
   } catch (error) {
     write({ id, error: { code: -32000, message: error instanceof Error ? error.message : String(error) } });

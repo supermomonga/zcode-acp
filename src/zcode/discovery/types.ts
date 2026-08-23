@@ -13,8 +13,49 @@ export interface RuntimePaths {
   readonly appMetadata?: string;
   readonly appPackage: string;
   readonly hostArchive: string;
+}
+
+export type HostContractId = "zcode-host-3.3.6" | "zcode-host-3.8.1";
+
+export interface HostOperationDescriptor {
+  readonly method: string;
+  readonly service: "agent" | "task";
+  readonly sessionParameter: "sessionId" | "taskId";
+}
+
+export interface HostContractDescriptor {
+  readonly id: HostContractId;
+  readonly hostIndexRelativePath: string;
+  readonly hostRpcModuleRelativePath: string;
+  readonly hostIndexSha256?: string;
+  readonly hostRpcModuleSha256?: string;
+  readonly rpcExports: {
+    readonly protocol: string;
+    readonly client: string;
+    readonly service: string;
+  };
+  readonly serviceChannels: {
+    readonly agent: string;
+    readonly task?: string;
+  };
+  readonly operations: {
+    readonly cancelGeneration: HostOperationDescriptor;
+    readonly respondStructuredInput: HostOperationDescriptor & {
+      readonly responseShape: "nested" | "flattened";
+    };
+    readonly respondPermission: HostOperationDescriptor & {
+      readonly answerShape: "response" | "optionId";
+    };
+  };
+}
+
+export interface ResolvedHostContract {
+  readonly descriptor: HostContractDescriptor;
   readonly hostIndex: string;
   readonly hostRpcModule: string;
+  readonly hostIndexSha256: string;
+  readonly hostRpcModuleSha256: string;
+  readonly rpcExports: readonly string[];
 }
 
 export type CompatibilityStatus =
@@ -35,6 +76,7 @@ export interface RuntimeIdentity {
 export interface DiscoveredRuntime {
   readonly paths: RuntimePaths;
   readonly identity: RuntimeIdentity;
+  readonly hostContract?: ResolvedHostContract;
   readonly compatibility: CompatibilityStatus;
   readonly compatibilityReason: string;
   readonly writableInstallRoot: boolean;
