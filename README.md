@@ -71,23 +71,25 @@ Without a subcommand, stdout is reserved for ACP JSON-RPC frames and diagnostics
 
 ## Paseo
 
-Paseo can launch the same headless ZCode runtime without changing Paseo itself. Add a derived provider to `~/.paseo/config.json`:
+Paseo can launch the same headless ZCode runtime without changing Paseo itself. Override Paseo's built-in `opencode` provider in `~/.paseo/config.json`:
 
 ```json
 {
   "version": 1,
   "agents": {
     "providers": {
-      "zcode": {
-        "extends": "opencode",
-        "label": "ZCode",
-        "description": "Installed ZCode runtime",
-        "command": ["/absolute/path/to/zcode-acp", "paseo"]
+      "opencode": {
+        "label": "ZCode(opencode)",
+        "description": "ZCode",
+        "command": ["/absolute/path/to/zcode-acp", "paseo"],
+        "enabled": true
       }
     }
   }
 }
 ```
+
+Do not configure ZCode as a separate provider with `extends: "opencode"`. Paseo uses one shared OpenCode server manager, so catalog and session operations from both entries would target whichever command initialized it first. The built-in OpenCode provider and ZCode therefore cannot be used at the same time; the configuration above replaces OpenCode with ZCode while it is enabled.
 
 Paseo appends `serve --port <allocated-port>` to this command. The facade binds only to `127.0.0.1`; stdout contains the required `listening on` readiness line and diagnostics remain on stderr.
 
