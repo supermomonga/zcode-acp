@@ -150,14 +150,14 @@ debug protocol traceを将来提供する場合、明示opt-in、保存先、ret
 ## 10. Supply-chain and compatibility
 
 - ZCodeは公式install artifactだけを利用
-- adapterはversionとhashをsupport matrixへ記録
+- adapterはapp/build/platform、CLI version、metadata/host hashと公式CLI integrity hashをsupport matrixへ記録
 - ACP SDKをexact versionでlock
 - dependency lockfileをcommit
 - release artifactにSBOM/checksumを提供
-- unknown ZCode hashは通常起動を拒否
-- same versionでもartifact hashが変わった場合は再検証
+- unknown metadata/host hashは通常起動を拒否
+- same versionでもhost artifact hashが変わった場合は再検証。CLI本文だけのhash差分は`modified`と診断
 
-hash checkはlicenseや署名検証の代替ではありません。platformが提供するcode signing/package verificationもrelease手順へ追加します。
+host hash checkとCLI integrity診断はlicenseや署名検証の代替ではありません。platformが提供するcode signing/package verificationもrelease手順へ追加します。
 
 ## 11. Licensing boundary
 
@@ -205,7 +205,7 @@ ZCode runtimeが送信するtelemetry、prompt、workspace情報の範囲は今�
 - [x] oversized/malformed private frame test
 - [x] symlink/cwd binding test
 - [x] child process cleanup test
-- [x] unsupported hash/version fail-closed test
+- [x] unsupported host hash/version fail-closed testとmodified CLI integrity test
 - [x] Linux multi-user file permission design review
 - [x] release artifactへZCode本体を同梱しないことを確認
 - [x] dependency license/SBOM生成

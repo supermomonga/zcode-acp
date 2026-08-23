@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import * as acp from "@agentclientprotocol/sdk";
 import { NullLogger } from "../../src/diagnostics/logger.ts";
-import type { SessionService } from "../../src/domain/session-service.ts";
+import type { SessionService } from "../../src/acp/v1/session-service.ts";
 import { createAcpAgent } from "../../src/acp/v1/server.ts";
 
 describe("ACP v1 server", () => {

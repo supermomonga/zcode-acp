@@ -22,4 +22,26 @@ describe("CLI arguments", () => {
     expect(parseArguments(["login"])).toEqual({ command: "login", json: false });
     expect(parseArguments(["logout"])).toEqual({ command: "logout", json: false });
   });
+
+  test("accepts the Paseo OpenCode-compatible command surface", () => {
+    expect(parseArguments(["paseo", "--version"])).toEqual({
+      command: "paseo-version",
+      json: false,
+    });
+    expect(parseArguments(["paseo", "auth", "list"])).toEqual({
+      command: "paseo-auth-list",
+      json: false,
+    });
+    expect(parseArguments(["paseo", "serve", "--port", "4096"])).toEqual({
+      command: "paseo-serve",
+      json: false,
+      port: 4096,
+    });
+  });
+
+  test("rejects a missing or unsafe Paseo port", () => {
+    expect(() => parseArguments(["paseo", "serve"])).toThrow();
+    expect(() => parseArguments(["paseo", "serve", "--port", "0"])).toThrow();
+    expect(() => parseArguments(["paseo", "serve", "--port", "65536"])).toThrow();
+  });
 });

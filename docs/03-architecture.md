@@ -2,7 +2,7 @@
 
 ## 1. 設計原則
 
-`zcode-acp` はprotocol proxyではなく、二つの異なる状態機械を接続するadapterです。外側のACP JSON-RPC envelopeを内側へ付け替えるだけでは、prompt完了、permission、cancel、session replayの意味が一致しません。
+`zcode-acp` はprotocol proxyではなく、異なる状態機械を接続するadapterです。外側のACP JSON-RPCまたはPaseo向けOpenCode HTTP/SSE envelopeを内側へ付け替えるだけでは、prompt完了、permission、cancel、session replayの意味が一致しません。
 
 設計では次を優先します。
 
@@ -17,13 +17,15 @@
 
 ```mermaid
 flowchart TB
-    subgraph ClientSide["ACP client process"]
+    subgraph ClientSide["Client processes"]
       Client["Generic ACP Client"]
+      PaseoClient["Paseo"]
     end
 
     subgraph Adapter["zcode-acp process"]
       Acp["ACP v1 server"]
-      Session["Session coordinator"]
+      Paseo["Paseo OpenCode facade<br/>HTTP + SSE"]
+      Session["Protocol-neutral session coordinator"]
       Mapper["Event / error / permission mapper"]
       PM["Official host bridge"]
       Discovery["Runtime discovery + compatibility gate"]
@@ -36,7 +38,9 @@ flowchart TB
     end
 
     Client <-->|"ACP v1 over stdio"| Acp
+    PaseoClient <-->|"OpenCode HTTP + SSE"| Paseo
     Acp <--> Session
+    Paseo <--> Session
     Session <--> Mapper
     Session <--> PM
     Discovery --> PM
@@ -55,14 +59,25 @@ flowchart TB
 - client callback requestの相関
 - stdoutへACP frameだけを直列化
 
+### 2.1.1 Paseo OpenCode facade
+
+責務:
+
+- Paseoが固定するOpenCode SDK 1.14.46のHTTP routeとglobal SSE eventを提供
+- model / thought level / modeをprovider / variant / primary agentへ変換
+- native structured inputとpermission optionを`question.asked`へlosslessに変換
+- `127.0.0.1`だけにbindし、stdout readiness lineとstderr diagnosticsを分離
+- ZCodeに意味保存して写像できないrewind/archiveを明示的に拒否
+
 ### 2.2 Runtime discovery and compatibility gate
 
 責務:
 
 - install rootを一意に解決
 - runtime executable、CLI entry、metadataの組を検証
-- app version、CLI version、platform、hashを取得
-- support matrixと照合
+- app version/build、platform、`zcode.cjs version`のCLI version、metadata hashをsupport matrixと照合
+- CLI SHA-256は公式artifactとの差分として診断するが、host互換性の選択条件にはしない
+- artifact固有descriptorからhost index/RPC moduleを解決し、install root内であること、SHA-256、必要な`g/i/j` exportを検証
 - 起動前の軽量doctor smoke
 
 不一致時はprocessを起動しません。システムNodeや別install rootのCLIへfallbackしません。
@@ -74,10 +89,13 @@ flowchart TB
 - 公式host workerとRPC channelを一connectionにつき一つ起動
 - Electron utility-processのMessagePort shapeをNode workerへ適合
 - service method allowlistとstrict result schema
+- artifact固有のservice channelと意味ベース操作をversion別contract adapterでnative RPCへ変換
 - child stdout/stderrをACP stdoutから隔離
 - graceful shutdownとforce cleanup
 
 workspace keyは最低でもcanonical absolute cwdから導出します。symlink解決、大文字小文字、存在しないpathの扱いはplatformごとのテストで固定します。
+
+中立コアがbridgeへ渡す操作は`cancelGeneration`、`respondStructuredInput`、`respondPermission`です。3.3.6 adapterは`zcode-agent`上の`stopSession` / `respondUserInput` / response objectへ、3.8.1 adapterは`zcode-task`上の`stopGeneration` / `respondElicitation` / option IDへ変換します。3.8.1のnative `taskId`は公開session IDと同じopaque IDですが、parameter名の変換はadapter内だけで行います。
 
 ### 2.4 ZCode protocol client
 
@@ -91,11 +109,11 @@ workspace keyは最低でもcanonical absolute cwdから導出します。symlin
 
 ACP request IDとZCode request IDを同一視せず、相関mapで結びます。
 
-### 2.5 Session coordinator
+### 2.5 Protocol-neutral session coordinator
 
 責務:
 
-- ACP session ID、native ZCode session ID、workspace keyのbinding
+- 外側protocolのsession IDとして公開するnative ZCode session IDとworkspace keyのbinding
 - promptごとの状態機械
 - subscribe開始とevent sequenceの管理
 - cancel、permission、user inputのpending state
@@ -170,7 +188,7 @@ dynamic subscriptionを`sendPrompt`より先に確立し、send直後のeventを
 
 ### 4.3 cancel
 
-ACP `session/cancel` はnotificationです。受信後はnative `session/stop` を一度だけ送り、pending permission/user input callbackもcancelします。native eventが既にpipe上にある可能性があるため、終端eventまでは順序を保って処理し、その後prompt responseを `cancelled` で完了します。
+ACP `session/cancel` はnotificationです。受信後は意味操作`cancelGeneration`を一度だけ送り、選択済みhost contractが対応するnative stop methodへ変換します。pending permission/user input callbackもcancelします。native eventが既にpipe上にある可能性があるため、終端eventまでは順序を保って処理し、その後prompt responseを `cancelled` で完了します。
 
 ### 4.4 shutdown
 
@@ -255,12 +273,11 @@ adapterは常に `sessionId -> workspaceKey` bindingを保持し、別cwdから�
 
 ```text
 cli
- └─ acp-server
-     └─ session-coordinator
-         ├─ acp-mappers
-         └─ zcode-runtime
-             ├─ zcode-protocol
-             └─ runtime-discovery
+ ├─ acp-server ────────┐
+ └─ paseo-http-server ─┴─ session-coordinator
+                          └─ zcode-runtime
+                              ├─ zcode-protocol
+                              └─ runtime-discovery
 ```
 
 `zcode-protocol` はACP型へ依存させず、`acp-server` はZCode bundle pathを直接扱いません。private protocol更新とACP更新を別々にテストできる境界にします。

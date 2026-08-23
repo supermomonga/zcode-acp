@@ -9,6 +9,7 @@ import {
 } from "../protocol/client.ts";
 import type { NativeNotification } from "../protocol/v1/schemas.ts";
 import { DynamicEventSchema, type DynamicEvent } from "../protocol/v1/host-schemas.ts";
+import { adaptHostRequest } from "./contract.ts";
 import { ZCODE_HOST_BRIDGE_SOURCE } from "./runtime-source.ts";
 
 const SubscriptionResponseSchema = z.object({ subscribed: z.literal(true) }).strict();
@@ -30,6 +31,7 @@ export class ZCodeHostBridge {
     private readonly child: Bun.Subprocess<"pipe", "pipe", "pipe">,
     transport: BunBridgeTransport,
     private readonly logger: Logger,
+    private readonly runtime: DiscoveredRuntime,
   ) {
     this.client = new ZCodeProtocolClient(
       transport,
@@ -47,8 +49,28 @@ export class ZCodeHostBridge {
     runtime: DiscoveredRuntime,
     logger: Logger,
     environment: NodeJS.ProcessEnv = process.env,
+    options: { readonly allowDevelopmentCandidate?: boolean } = {},
   ): ZCodeHostBridge {
-    assertRuntimeSupported(runtime);
+    if (!options.allowDevelopmentCandidate) {
+      assertRuntimeSupported(runtime);
+    } else {
+      if (environment.ZCODE_ACP_ENABLE_CONTRACT_PROBE !== "1") {
+        throw new AdapterError(
+          "INVALID_CONFIGURATION",
+          "Development-candidate host contracts are restricted to explicit contract probes",
+        );
+      }
+      if (runtime.compatibility !== "development-candidate" && runtime.compatibility !== "supported") {
+        assertRuntimeSupported(runtime);
+      }
+    }
+    const host = runtime.hostContract;
+    if (host === undefined) {
+      throw new AdapterError(
+        "RUNTIME_DISCOVERY_FAILED",
+        "Supported ZCode artifact has no resolved host contract",
+      );
+    }
     const child = Bun.spawn(
       [runtime.paths.executable, "-e", ZCODE_HOST_BRIDGE_SOURCE],
       {
@@ -56,8 +78,9 @@ export class ZCodeHostBridge {
         env: {
           ...environment,
           ELECTRON_RUN_AS_NODE: "1",
-          ZCODE_ACP_HOST_INDEX: runtime.paths.hostIndex,
-          ZCODE_ACP_HOST_RPC_MODULE: runtime.paths.hostRpcModule,
+          ZCODE_ACP_HOST_INDEX: host.hostIndex,
+          ZCODE_ACP_HOST_RPC_MODULE: host.hostRpcModule,
+          ZCODE_ACP_HOST_CONTRACT: JSON.stringify(host.descriptor),
         },
         stdin: "pipe",
         stdout: "pipe",
@@ -68,6 +91,7 @@ export class ZCodeHostBridge {
       child,
       new BunBridgeTransport(child.stdin, child.stdout),
       logger,
+      runtime,
     );
     logger.log("info", "zcode.host.started", { pid: child.pid });
     void child.exited.then((exitCode) => {
@@ -85,7 +109,17 @@ export class ZCodeHostBridge {
     resultSchema: Schema,
     timeoutMs = 30_000,
   ): Promise<z.output<Schema>> {
-    return this.client.request(method, params, resultSchema, timeoutMs);
+    const contract = this.runtime.hostContract;
+    if (contract === undefined) {
+      throw new AdapterError("RUNTIME_DISCOVERY_FAILED", "ZCode host contract is unavailable");
+    }
+    const adapted = adaptHostRequest(contract.descriptor, method, params);
+    return this.client.request(
+      "__call",
+      { service: adapted.service, method: adapted.method, params: adapted.params },
+      resultSchema,
+      timeoutMs,
+    );
   }
 
   async subscribe(
@@ -100,7 +134,7 @@ export class ZCodeHostBridge {
     const subscriptionId = crypto.randomUUID();
     this.handlers.set(subscriptionId, handler);
     try {
-      await this.request(
+      await this.client.request(
         "__subscribe",
         { subscriptionId, target },
         SubscriptionResponseSchema,
@@ -116,7 +150,7 @@ export class ZCodeHostBridge {
         if (disposed) return;
         disposed = true;
         this.handlers.delete(subscriptionId);
-        await this.request(
+        await this.client.request(
           "__unsubscribe",
           { subscriptionId },
           UnsubscriptionResponseSchema,

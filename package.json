@@ -1,7 +1,7 @@
 {
   "name": "zcode-acp",
   "version": "0.1.1",
-  "description": "ACP v1 adapter for the installed ZCode runtime",
+  "description": "ACP v1 and Paseo OpenCode-compatible adapters for the installed ZCode runtime",
   "type": "module",
   "private": true,
   "bin": {
@@ -19,6 +19,7 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@opencode-ai/sdk": "1.14.46",
     "@types/bun": "1.3.13",
     "typescript": "7.0.2"
   },

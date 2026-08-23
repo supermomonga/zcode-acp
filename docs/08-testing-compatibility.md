@@ -14,6 +14,8 @@ build successだけでは、private protocol adapterの正しさを保証でき�
 
 | Component | Version/platform | Evidence | Status |
 | --- | --- | --- | --- |
+| ZCode app | 3.8.1 build 3.8.1.5310 / macOS arm64 | exact host hashes、official/modified CLI integrity、実model/tool/permission/input/cancel/resume E2E | supported |
+| ZCode CLI | 0.16.3 / darwin-arm64 | bundled runtime version/doctor、host E2E | supported |
 | ZCode app | 3.3.6 build 3.3.6.3198 / macOS arm64 | metadata/hash、official host、実model/tool/cancel E2E | supported |
 | ZCode CLI | 0.15.2 / darwin-arm64 | bundled runtime version/doctor、host E2E | supported |
 | ZCode Linux package | 3.3.6-3198 / linux-x64 | official `.deb`、displayなしUbuntu container E2E | supported |
@@ -22,8 +24,10 @@ build successだけでは、private protocol adapterの正しさを保証でき�
 | ACP v2 | protocol v2 draft | stable baseline schemaと公式migration文書 | unsupported |
 | Toad | 0.6.20 / macOS arm64 | 実process log、initialize/session/new/prompt stream/end_turn | baseline pass |
 | acpx | 0.12.0 / macOS arm64 | strict JSON output、initialize/session/new/tool/text/end_turn | baseline pass |
+| Paseo OpenCode facade | Paseo `c60fa098a` / `@opencode-ai/sdk` 1.14.46 | standalone binary + real SDK/model、GLM-only catalog、SSE/tool/history/restart-resume/delete | pass |
+| Paseo daemon | 0.5.1 / macOS arm64 | isolated daemon、provider models、agent create/read、same-agent send/resume、stop/cancel | pass |
 
-support matrixはversion文字列だけでなくCLI/metadata SHA-256まで一致するartifactに限定します。
+support matrixはapp/build/platform、`zcode.cjs version`が返すCLI version、metadata hashでhost contract候補を選び、host index/host RPC module SHA-256とrequired exportを完全一致で検証します。3.8.1の公式CLI SHA-256 `9318f60f…e4274`はintegrity比較値であり、異なる場合は`modified`と診断します。metadataは`3cb76cfe…4660`、host indexは`d0f82503…9c3f`、host RPCは`46959e5a…9fc3`です。
 
 ## 3. Test layers
 
@@ -118,6 +122,13 @@ workspaceは使い捨てGit repoとし、実行前後のdiffをassertします�
 | --- | --- | --- |
 | Human TUI | Toad | 実際のpermission、stream、cancel UX |
 | Headless/script | acpx | deterministic scenario、CI、JSON output |
+| Desktop agent client | Paseo | OpenCode-compatible provider、structured question、permission、resume |
+
+### 3.7 Paseo OpenCode compatibility tests
+
+`tests/paseo/opencode-server.test.ts`はPaseoが固定している`@opencode-ai/sdk` 1.14.46を実クライアントとして使用します。対象はprovider/model、dynamic mode、session create/status/messages/delete、SSE stream、tool lifecycleとusage、MCP、複数question、multi-select、重複header、カンマを含むlabel、native permission、reply/reject/disconnectのexactly-once完了、cancel、persisted session resume/history、unsupported rewindです。
+
+この契約はversion negotiationで推測せず、SDK versionとPaseo commitを固定します。Paseo更新時はこのtestを新しいSDKへ更新して通過させてからcompatibility targetを変更します。
 | IDE | Zedなど | 標準ACP interoperabilityの追加確認 |
 
 client固有設定やextensionを使わずにbaseline scenarioを通すtestと、optional capability testを分けます。
@@ -134,7 +145,7 @@ permission選択画面やcancel操作のclient固有UXは、adapterのwire/runti
 ZCode private event schemaの正本を作る手順:
 
 1. isolated test user/homeとtemporary workspaceを用意
-2. ZCode 3.3.6/CLI 0.15.2のhashを記録
+2. 対象ZCode app/build/CLI versionとCLI integrity/metadata/host index/host RPC hashを記録
 3. app-serverとの送受信をframe単位でcapture
 4. session ID、trace ID、path、prompt、token、headerをdeterministic placeholderへ置換
 5. request/response/event orderingを保持
@@ -232,7 +243,7 @@ performance optimizationでevent orderingやschema validationを省略しませ�
 ## 8. Update procedure for a new ZCode version
 
 1. 公式artifactを取得しsignature/checksumを記録
-2. app/CLI/metadata/hashを採取
+2. app/build/platform、CLI version/integrity、metadata/host hashを採取
 3. launch smoke
 4. protocol method inventoryをdiff
 5. schema/golden tracesをdiff
@@ -271,7 +282,7 @@ help outputだけが変わらなくてもprivate schemaが変わる可能性が�
 - secret redaction/stdout isolation pass
 - SHA-256 checksumsとSPDX SBOM生成
 
-Gate A-DはmacOS arm64とLinux x64で通過済みです。加えてToad 0.6.20とacpx 0.12.0のbaseline接続を通過済みです。permission画面やcancel操作などclient固有UXの追加検証結果を、adapter capabilityへ混ぜません。
+ZCode 3.3.6はmacOS arm64とLinux x64、ZCode 3.8.1 build 3.8.1.5310はmacOS arm64でGate A-Dを通過済みです。加えてToad 0.6.20とacpx 0.12.0のbaseline接続を通過済みです。permission画面やcancel操作などclient固有UXの追加検証結果を、adapter capabilityへ混ぜません。
 
 ## 10. Evidence record format
 

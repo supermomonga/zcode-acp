@@ -3,7 +3,7 @@ import * as acp from "@agentclientprotocol/sdk";
 import type { Logger } from "../../diagnostics/logger.ts";
 import { redactText, redactValue, safeError } from "../../diagnostics/redaction.ts";
 import { AdapterError } from "../../domain/errors.ts";
-import type { SessionService } from "../../domain/session-service.ts";
+import type { SessionService } from "./session-service.ts";
 import { ACP_PROTOCOL_VERSION, ZCODE_ACP_VERSION } from "../../version.ts";
 
 const ADAPTER_ERROR_CODE = -32010;

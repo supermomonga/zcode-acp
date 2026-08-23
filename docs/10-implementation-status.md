@@ -1,10 +1,10 @@
 # Implementation status
 
-Last updated: 2026-07-19
+Last updated: 2026-08-23
 
 ## Implementation status
 
-MVPと、ZCode 3.3.6 hostが提供するpost-MVP surfaceは実装・runtime検証済みです。
+MVPと、ZCode 3.3.6および3.8.1 hostが提供するpost-MVP surfaceは実装・runtime検証済みです。
 
 - Bun 1.3.13 / TypeScript 7のstandalone build
 - `@agentclientprotocol/sdk` 1.2.1、ACP protocol v1
@@ -21,13 +21,28 @@ MVPと、ZCode 3.3.6 hostが提供するpost-MVP surfaceは実装・runtime検�
 - model generation cancel、`$/cancel_request`、clean shutdown
 - notification handler内のnested native requestをdeadlockさせないordered dispatch queue
 - stdout isolation、bounded NDJSON、redaction、timeout、late response処理
-- exact app/CLI/metadata hash compatibility gate
+- exact app/build/platform、CLI version、metadata/host index/host RPC compatibility gate、CLI integrity診断、version別host contract adapter
 - macOS arm64/x64、Linux arm64/x64、Windows x64 standalone artifacts、SHA-256、SPDX 2.3 SBOM
 - Toad 0.6.20 / acpx 0.12.0のbaseline client interoperability
+- Paseo commit `c60fa098a` / OpenCode SDK 1.14.46向けHTTP/SSE facade
+- protocol-neutral ZCode session engineとACP/OpenCode frontend分離
+- Paseo上のmodel、thought level、mode、stream、tool、MCP、question、permission、cancel、resume変換
+
+Paseo facadeは固定SDKを使うHTTP/SSE契約テストに加え、standalone binaryと実モデルでGLM-only catalog、SSE、read tool、permission、history、process再起動後のresume/deleteまで検証済みです。さらに隔離したPaseo daemon 0.5.1からprovider catalog、agent create/read、同一agentへのsend/resume、stop/cancelを通過しています。実モデルの応答待ちでもSSEを維持するよう、loopback serverのidle timeoutを明示しています。
 
 ## Runtime evidence
 
 ### macOS arm64
+
+ZCode 3.8.1 build 3.8.1.5310 / CLI 0.16.3で次を実行済みです。
+
+- CLI version/metadataとhost index/host RPC moduleの完全一致gate、CLI hash integrity診断、`g/i/j` export検証
+- `zcode-agent` / `zcode-task` serviceへのversion別dispatch
+- ACP wireの実モデルtext/read/write allow/write deny/structured input/cancel/resume/history
+- 3.8.1 native `stopGeneration`、`respondElicitation`、permission option IDの往復
+- OpenCode SDK 1.14.46からのGLM-only catalog、SSE/tool/history/restart-resume/delete
+- Paseo daemon 0.5.1からのagent create/read、same-agent resume、cancel/idle復帰
+- adapter起動により生成されたprocessがElectron Node host workerだけであることのinspection
 
 ZCode 3.3.6 build 3.3.6.3198 / CLI 0.15.2で次を実行済みです。
 
@@ -63,10 +78,13 @@ macOS stateを一時containerへ移行する検証では、公式credential ciph
 - Linux arm64、macOS x64、Windows runtime support: adapter binaryは生成するが、公式ZCode artifactのhash gateと実機E2Eが未成立
 - headless captcha recoveryは応答不能として明示的error。通常のprovider runtime header適用は公式hostが処理
 - Debian native OAuth、advanced client UX、performance matrixは外部環境・人手が必要
+- PaseoのOpenCode providerが固定表示するAuto AcceptとrewindはZCodeへ意味保存して写像できない。permissionはquestionとしてlosslessに提示し、rewind/archiveは明示的unsupported
 
 これらをprivate storage直編集、permission流用、推測したplatform hash、未リリースschemaのstable扱いで埋めません。
 
 adapter releaseへZCode artifactを含めない境界は維持します。
+
+既に起動中のPaseo daemonへprovider binaryを差し替えた場合、`reload`ではOpenCode managerの既存snapshotが置換されません。そのdaemonで新binaryを使うには一度再起動が必要です。これは隔離したfresh daemonでは発生せず、ZCode facadeのcompatibility判定とは独立したPaseo process lifecycle上の制約です。
 
 ## Added runtime evidence
 
@@ -85,6 +103,8 @@ bun run check
 bun run release
 ZCODE_ACP_ENABLE_CONTRACT_PROBE=1 bun run scripts/probe-acp.ts
 ZCODE_ACP_ENABLE_CONTRACT_PROBE=1 bun run scripts/probe-safety.ts
+ZCODE_ACP_ENABLE_CONTRACT_PROBE=1 bun run scripts/probe-structured-input.ts
+ZCODE_ACP_ENABLE_CONTRACT_PROBE=1 bun run scripts/probe-paseo.ts
 ./dist/zcode-acp-darwin-arm64 doctor --json
 ```
 
