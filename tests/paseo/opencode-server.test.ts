@@ -185,6 +185,62 @@ describe("Paseo OpenCode 1.14.46 facade", () => {
     eventAbort.abort();
   });
 
+  test("preserves a tool start time across repeated progress and completion", async () => {
+    const cwd = await realpath(process.cwd());
+    const engine = new FakePaseoEngine("progress");
+    server = startPaseoOpenCodeServer({
+      port: await availablePort(),
+      logger: new NullLogger(),
+      engine,
+    });
+    const client = createOpencodeClient({
+      baseUrl: `http://127.0.0.1:${server.port}`,
+      directory: cwd,
+    });
+    const eventAbort = new AbortController();
+    const events = await client.global.event({ sseMaxRetryAttempts: 0, signal: eventAbort.signal });
+    const iterator = events.stream[Symbol.asyncIterator]();
+    await iterator.next();
+    const created = await client.session.create({ directory: cwd });
+    await client.session.promptAsync({
+      sessionID: created.data!.id,
+      directory: cwd,
+      parts: [{ type: "text", text: "inspect" }],
+    });
+
+    const runningStarts: number[] = [];
+    let completedTime: { start: number; end: number } | undefined;
+    for (let count = 0; count < 30; count += 1) {
+      const event = ((await iterator.next()).value as {
+        payload: { type: string; properties: Record<string, unknown> };
+      }).payload;
+      if (event.type === "message.part.updated") {
+        const part = event.properties.part as {
+          type?: string;
+          state?: { status?: string; time?: { start?: number; end?: number } };
+        };
+        if (part.type === "tool" && part.state?.status === "running" && part.state.time?.start != null) {
+          runningStarts.push(part.state.time.start);
+        }
+        if (
+          part.type === "tool" &&
+          part.state?.status === "completed" &&
+          part.state.time?.start != null &&
+          part.state.time.end != null
+        ) {
+          completedTime = { start: part.state.time.start, end: part.state.time.end };
+        }
+      }
+      if (event.type === "session.idle") break;
+    }
+
+    expect(runningStarts).toHaveLength(2);
+    expect(runningStarts[1]).toBe(runningStarts[0]);
+    expect(completedTime?.start).toBe(runningStarts[0]);
+    expect(completedTime?.end).toBeGreaterThan(completedTime!.start);
+    eventAbort.abort();
+  });
+
   test("rejects MCP mutation after the first prompt", async () => {
     const cwd = await realpath(process.cwd());
     const engine = new FakePaseoEngine();
@@ -381,7 +437,9 @@ class FakePaseoEngine implements PaseoEngine {
   cancelCalls = 0;
   private nextSession = 1;
 
-  constructor(private readonly behavior: "full" | "reject" | "wait-cancel" | "history" = "full") {}
+  constructor(
+    private readonly behavior: "full" | "progress" | "reject" | "wait-cancel" | "history" = "full",
+  ) {}
 
   async getWorkspaceSettings(): Promise<SessionSettings> {
     return settings();
@@ -462,6 +520,33 @@ class FakePaseoEngine implements PaseoEngine {
     interaction: SessionInteraction,
     signal: AbortSignal,
   ): Promise<PromptResult> {
+    if (this.behavior === "progress") {
+      await interaction.notify("session-1", {
+        sessionUpdate: "tool_call",
+        toolCallId: "tool-1",
+        title: "Bash",
+        rawInput: { command: "sleep" },
+      });
+      await interaction.notify("session-1", {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "tool-1",
+        status: "in_progress",
+      });
+      await Bun.sleep(5);
+      await interaction.notify("session-1", {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "tool-1",
+        status: "in_progress",
+      });
+      await Bun.sleep(5);
+      await interaction.notify("session-1", {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "tool-1",
+        status: "completed",
+        rawOutput: "done",
+      });
+      return { stopReason: "end_turn" };
+    }
     if (this.behavior === "reject" || this.behavior === "wait-cancel") {
       this.userInputResult = await interaction.requestUserInput(userInputRequest());
       if (this.behavior === "wait-cancel") {

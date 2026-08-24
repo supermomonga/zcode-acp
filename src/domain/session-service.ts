@@ -45,6 +45,7 @@ interface ToolState {
   name: string;
   rawInputText: string;
   created: boolean;
+  status: "pending" | "in_progress" | "completed" | "failed";
 }
 
 interface ActiveTurn {
@@ -894,6 +895,7 @@ export class HeadlessZCodeSessionEngine implements SessionEngine {
       name: stringValue(payload.toolName) ?? "tool",
       rawInputText: "",
       created: false,
+      status: "pending" as const,
     };
     turn.tools.set(toolCallId, tool);
     if (kind === "tool_input_start") {
@@ -946,17 +948,18 @@ export class HeadlessZCodeSessionEngine implements SessionEngine {
       name: stringValue(payload.toolName) ?? "tool",
       rawInputText: "",
       created: false,
+      status: "pending" as const,
     };
     turn.tools.set(id, tool);
     if (kind === "scheduled") {
       await this.createToolCall(binding, turn, tool);
       return;
     }
-    await this.createToolCall(binding, turn, tool);
-    if (kind === "started") {
-      await this.updateTool(binding, turn, { toolCallId: id, status: "in_progress" });
+    if (kind === "started" || kind === "progress") {
+      await this.markToolInProgress(binding, turn, tool, kind);
       return;
     }
+    await this.createToolCall(binding, turn, tool);
     if (kind === "result") {
       const result = payload.result;
       await this.updateTool(binding, turn, {
@@ -965,6 +968,7 @@ export class HeadlessZCodeSessionEngine implements SessionEngine {
         rawOutput: result,
         content: textToolContent(result),
       });
+      tool.status = "completed";
       return;
     }
     if (kind === "error") {
@@ -977,9 +981,28 @@ export class HeadlessZCodeSessionEngine implements SessionEngine {
           typeof error.message === "string" ? error.message : "Tool execution failed",
         ),
       });
+      tool.status = "failed";
       return;
     }
     throw new AdapterError("NATIVE_PROTOCOL_ERROR", `Unsupported tool update kind: ${kind}`);
+  }
+
+  private async markToolInProgress(
+    binding: SessionBinding,
+    turn: ActiveTurn,
+    tool: ToolState,
+    kind: "started" | "progress",
+  ): Promise<void> {
+    if (tool.status === "completed" || tool.status === "failed") {
+      throw new AdapterError(
+        "NATIVE_PROTOCOL_ERROR",
+        `Invalid tool transition: ${kind} after ${tool.status}`,
+      );
+    }
+    await this.createToolCall(binding, turn, tool);
+    if (tool.status === "in_progress") return;
+    await this.updateTool(binding, turn, { toolCallId: tool.id, status: "in_progress" });
+    tool.status = "in_progress";
   }
 
   private async updateTool(
