@@ -81,11 +81,15 @@ top-level eventは次のdiscriminated unionだけを受理します。
 
 - `scheduled`
 - `started`
+- `progress`
 - `result`
 - `error`
 - `batch`
 
 tool inputはdeltaを結合してJSON parseを試し、raw input/outputもACP updateへ保持します。
+`progress`は実行中状態への非終端更新として扱い、ACP `tool_call_update`の
+`status: "in_progress"`へ変換します。`stdoutTail`、`stderrTail`、PID、経過時間、
+バイト数は途中時点のZCode固有メタデータであり、ACPの`content`、`rawOutput`、`_meta`には転送しません。
 
 ## 6. Reverse interactions
 

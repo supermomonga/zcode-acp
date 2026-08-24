@@ -640,8 +640,12 @@ class OpenCodeFacade {
       const previous = record(part.state);
       const status = stringValue(update.status);
       const time = Date.now();
+      const previousStart = record(previous.time).start;
+      const start = typeof previousStart === "number" && Number.isFinite(previousStart)
+        ? previousStart
+        : time;
       if (status === "in_progress") {
-        part.state = { status: "running", input: record(previous.input), time: { start: time } };
+        part.state = { status: "running", input: record(previous.input), time: { start } };
       } else if (status === "completed") {
         part.state = {
           status: "completed",
@@ -649,14 +653,14 @@ class OpenCodeFacade {
           output: stringify(update.rawOutput),
           title: stringValue(part.tool) ?? "tool",
           metadata: {},
-          time: { start: time, end: time },
+          time: { start, end: time },
         };
       } else if (status === "failed") {
         part.state = {
           status: "error",
           input: record(previous.input),
           error: stringify(update.rawOutput),
-          time: { start: time, end: time },
+          time: { start, end: time },
         };
       }
       this.publish(session.cwd, "message.part.updated", {

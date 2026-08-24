@@ -50,6 +50,27 @@ describe("ZCode host schemas", () => {
       type: "session.event",
       event: { ...base, eventId: "event-2", seq: 2, type: "tool.updated", payload: { kind: "result", toolCallId: "tool-1" } },
     })).toBeTruthy();
+    expect(DynamicEventSchema.parse({
+      type: "session.event",
+      event: {
+        ...base,
+        eventId: "event-3",
+        seq: 3,
+        type: "tool.updated",
+        payload: {
+          kind: "progress",
+          toolCallId: "tool-1",
+          toolName: "Bash",
+          elapsedMs: 1_500,
+          pid: 42,
+          stdoutBytes: 120,
+          stderrBytes: 5,
+          outputBytes: 125,
+          stdoutTail: "partial output",
+          stderrTail: "warning",
+        },
+      },
+    })).toBeTruthy();
     expect(() => DynamicEventSchema.parse({
       type: "session.event",
       event: { ...base, seq: -1, type: "turn.completed", payload: { resultType: "success" } },
