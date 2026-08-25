@@ -2,7 +2,7 @@
 
 ## 1. Scope
 
-対象はcompatibility manifestに登録されたZCode 3.3.6 / CLI 0.15.2およびZCode 3.8.1 / CLI 0.16.3の`app.asar/out/host`に含まれる公式local host serviceです。公開APIではないため、app/build/platform、CLI version、metadata hashとhost hash/exportが一致するartifactにだけ適用します。CLI本文のSHA-256はintegrity診断であり、host contractの選択条件ではありません。
+対象はcompatibility manifestに登録されたZCode 3.3.6 / CLI 0.15.2、ZCode 3.8.1 / CLI 0.16.3、およびZCode 3.9.1 / CLI 0.16.5の`app.asar/out/host`に含まれる公式local host serviceです。公開APIではないため、app/build/platform、CLI version、metadata hashとhost hash/exportが一致するartifactにだけ適用します。CLI本文のSHA-256はintegrity診断であり、host contractの選択条件ではありません。
 
 `zcode.cjs app-server --stdio`の直接protocolも調査しましたが、desktopのmodel-provider registryを持たないためproduction経路には採用していません。
 
@@ -33,7 +33,7 @@ bridgeのsuccess responseは、公式methodが`undefined`を返す場合も`resu
 
 ## 4. Versioned host contracts
 
-| Semantic operation | 3.3.6 contract | 3.8.1 contract |
+| Semantic operation | 3.3.6 contract | 3.8.1 / 3.9.1 contract |
 | --- | --- | --- |
 | service channel | `zcode-agent` | common: `zcode-agent`; task interaction: `zcode-task` |
 | cancel | `stopSession({sessionId})` | `stopGeneration({taskId})` |
@@ -42,7 +42,7 @@ bridgeのsuccess responseは、公式methodが`undefined`を返す場合も`resu
 
 `initialize`、`readWorkspaceState`、`createSession`、`sendPrompt`、`closeSession`、`respondProviderRuntimeHeaders`、`disposeWorkspace`とsubscriptionは共通agent serviceで扱います。このlistおよびdescriptorで宣言したtask操作以外のprivate methodはRPC経由で呼べません。
 
-3.8.1 descriptorはhost index `out/host/index.js`とRPC module `out/host/chunk-LVLFJXEE.js`を固定し、SHA-256と必要な`g/i/j` exportをworker起動前に検証します。pathがinstall rootを逸脱する場合もfail closedです。
+3.8.1 descriptorはhost index `out/host/index.js`とRPC module `out/host/chunk-LVLFJXEE.js`、3.9.1 descriptorは同じhost indexとRPC module `out/host/chunk-KGXW6KHC.js`を固定し、artifactごとのSHA-256と必要な`g/i/j` exportをworker起動前に検証します。pathがinstall rootを逸脱する場合もfail closedです。
 
 このlist以外のprivate methodはRPC経由で呼べません。
 
@@ -95,11 +95,11 @@ tool inputはdeltaを結合してJSON parseを試し、raw input/outputもACP up
 
 ### Permission
 
-native optionの`optionId`、name、意味上のresponseを保持し、decisionとpersistent updateの有無からACPのallow/reject once/alwaysへ写像します。ACP clientが返したIDが元optionに存在しなければ拒否します。client cancel/error/disconnect時は実在するdeny optionを選び、3.3.6にはresponse、3.8.1にはoption IDをexactly onceで返します。
+native optionの`optionId`、name、意味上のresponseを保持し、decisionとpersistent updateの有無からACPのallow/reject once/alwaysへ写像します。ACP clientが返したIDが元optionに存在しなければ拒否します。client cancel/error/disconnect時は実在するdeny optionを選び、3.3.6にはresponse、3.8.1および3.9.1にはoption IDをexactly onceで返します。
 
 ### Structured user input
 
-form elicitation capabilityを持つACP clientには複数質問・multiple selectを保持して`elicitation/create`へ変換します。3.8.1ではclient応答を`action`と`content`へ平坦化し、`respondElicitation`へ渡します。form非対応clientではpermission APIや空文字で代替せず、実際のdecline応答を返してturnを`INTERACTION_UNSUPPORTED`で停止します。
+form elicitation capabilityを持つACP clientには複数質問・multiple selectを保持して`elicitation/create`へ変換します。3.8.1および3.9.1ではclient応答を`action`と`content`へ平坦化し、`respondElicitation`へ渡します。form非対応clientではpermission APIや空文字で代替せず、実際のdecline応答を返してturnを`INTERACTION_UNSUPPORTED`で停止します。
 
 ### Provider runtime headers
 

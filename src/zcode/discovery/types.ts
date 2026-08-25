@@ -15,7 +15,10 @@ export interface RuntimePaths {
   readonly hostArchive: string;
 }
 
-export type HostContractId = "zcode-host-3.3.6" | "zcode-host-3.8.1";
+export type HostContractId =
+  | "zcode-host-3.3.6"
+  | "zcode-host-3.8.1"
+  | "zcode-host-3.9.1";
 
 export interface HostOperationDescriptor {
   readonly method: string;

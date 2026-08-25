@@ -1,10 +1,10 @@
 # Implementation status
 
-Last updated: 2026-08-23
+Last updated: 2026-08-25
 
 ## Implementation status
 
-MVPと、ZCode 3.3.6および3.8.1 hostが提供するpost-MVP surfaceは実装・runtime検証済みです。
+MVPと、ZCode 3.3.6、3.8.1、および3.9.1 hostが提供するpost-MVP surfaceは実装・runtime検証済みです。
 
 - Bun 1.3.13 / TypeScript 7のstandalone build
 - `@agentclientprotocol/sdk` 1.2.1、ACP protocol v1
@@ -33,6 +33,14 @@ Paseo facadeは固定SDKを使うHTTP/SSE契約テストに加え、standalone b
 ## Runtime evidence
 
 ### macOS arm64
+
+ZCode 3.9.1 build 3.9.1.5853 / CLI 0.16.5で次を実行済みです。
+
+- CLI version/metadataとhost index/host RPC moduleの完全一致gate、CLI hash integrity診断、`g/i/j` export検証
+- `zcode-agent` / `zcode-task` service、実モデルtext stream、read tool、permission allow/deny、structured input、cancel
+- session list/load/resume/historyとclean shutdown
+- ACP wireとOpenCode SDK 1.14.46からのGLM-only catalog、SSE/tool/history/resume
+- 3.9.1 native `stopGeneration`、`respondElicitation`、permission option IDの往復
 
 ZCode 3.8.1 build 3.8.1.5310 / CLI 0.16.3で次を実行済みです。
 

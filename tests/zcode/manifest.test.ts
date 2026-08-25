@@ -143,4 +143,59 @@ describe("ZCode compatibility manifest", () => {
       hostContract: { id: "zcode-host-3.8.1" },
     });
   });
+
+  test("recognizes the release-gated ZCode 3.9.1 macOS artifact", () => {
+    expect(
+      assessCompatibility({
+        platform: "darwin-arm64",
+        appVersion: "3.9.1",
+        appBuild: "3.9.1.5853",
+        cliVersion: "0.16.5",
+        cliSha256: "427ac6862771e29533ec69a3e9d801964cad98226463617ba461cc310bf6a850",
+        metadataSha256: "3cb76cfe74da2c647e077cbd35a0868034769ca04212f5ef8ac87fccb8ba4660",
+        bundle: {
+          runtime: "electron-node",
+          entry: "zcode.cjs",
+          platform: "darwin-arm64",
+          source: "apps/zcode-cli/packages/cli/dist/zcode.cjs",
+        },
+      }),
+    ).toMatchObject({
+      status: "supported",
+      cliIntegrity: "verified",
+      expectedCliSha256: "427ac6862771e29533ec69a3e9d801964cad98226463617ba461cc310bf6a850",
+      hostContract: {
+        id: "zcode-host-3.9.1",
+        hostRpcModuleRelativePath: "out/host/chunk-KGXW6KHC.js",
+      },
+    });
+  });
+
+  test("reports a modified ZCode 3.9.1 CLI without broadening artifact matching", () => {
+    const identity = {
+      platform: "darwin-arm64",
+      appVersion: "3.9.1",
+      appBuild: "3.9.1.5853",
+      cliVersion: "0.16.5",
+      cliSha256: "modified",
+      metadataSha256: "3cb76cfe74da2c647e077cbd35a0868034769ca04212f5ef8ac87fccb8ba4660",
+      bundle: {
+        runtime: "electron-node" as const,
+        entry: "zcode.cjs",
+        platform: "darwin-arm64",
+        source: "apps/zcode-cli/packages/cli/dist/zcode.cjs",
+      },
+    };
+
+    expect(assessCompatibility(identity)).toMatchObject({
+      status: "supported",
+      cliIntegrity: "modified",
+      expectedCliSha256: "427ac6862771e29533ec69a3e9d801964cad98226463617ba461cc310bf6a850",
+      hostContract: { id: "zcode-host-3.9.1" },
+    });
+    expect(assessCompatibility({ ...identity, appBuild: "3.9.1.5854" }).status)
+      .toBe("unsupported");
+    expect(assessCompatibility({ ...identity, metadataSha256: "different" }).status)
+      .toBe("unsupported");
+  });
 });
