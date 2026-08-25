@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -16,6 +16,11 @@ if (runtime.hostContract === undefined) {
   throw new Error(`No investigated host contract: ${runtime.compatibilityReason}`);
 }
 const workspacePath = await mkdtemp(join(tmpdir(), "zcode-acp-host-probe-"));
+await writeFile(
+  join(workspacePath, "package.json"),
+  `${JSON.stringify({ name: "zcode-acp-host-probe" })}\n`,
+  "utf8",
+);
 const bridge = ZCodeHostBridge.start(
   runtime,
   new NullLogger(),

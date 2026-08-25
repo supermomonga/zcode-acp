@@ -31,9 +31,9 @@ const legacy: HostContractDescriptor = {
 };
 
 const current: HostContractDescriptor = {
-  id: "zcode-host-3.8.1",
+  id: "zcode-host-3.9.1",
   hostIndexRelativePath: "out/host/index.js",
-  hostRpcModuleRelativePath: "out/host/chunk-LVLFJXEE.js",
+  hostRpcModuleRelativePath: "out/host/chunk-KGXW6KHC.js",
   hostIndexSha256: "a".repeat(64),
   hostRpcModuleSha256: "b".repeat(64),
   rpcExports: { protocol: "g", client: "i", service: "j" },
@@ -84,7 +84,7 @@ describe("ZCode host contract", () => {
     });
   });
 
-  test("maps ZCode 3.8.1 task interactions to the new native contract", () => {
+  test("maps ZCode 3.9.1 task interactions to the native task contract", () => {
     expect(adaptHostRequest(current, "cancelGeneration", { sessionId: "s", workspacePath: "/w" }))
       .toEqual({ service: "task", method: "stopGeneration", params: { taskId: "s", workspacePath: "/w" } });
     expect(adaptHostRequest(current, "respondStructuredInput", {
@@ -108,7 +108,7 @@ describe("ZCode host contract", () => {
     });
   });
 
-  test("rejects missing 3.8.1 permission option IDs", () => {
+  test("rejects missing 3.9.1 permission option IDs", () => {
     expect(() => adaptHostRequest(current, "respondPermission", {
       sessionId: "s",
       requestId: "r",

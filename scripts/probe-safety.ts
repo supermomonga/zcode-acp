@@ -100,8 +100,13 @@ try {
     `Create ${allowedPath} with the exact text allowed using a file-writing tool. Do not ask questions.`,
     true,
   );
-  if (allowed.permissionCount === 0 || (await readFile(allowedPath, "utf8")) !== "allowed") {
-    throw new Error(`Allow path failed: ${JSON.stringify(allowed)}`);
+  const allowedContent = await readFile(allowedPath, "utf8");
+  // ZCode 3.9.1's Write tool appends one trailing newline; this probe verifies permission flow.
+  if (
+    allowed.permissionCount === 0 ||
+    (allowedContent !== "allowed" && allowedContent !== "allowed\n")
+  ) {
+    throw new Error(`Allow path failed: ${JSON.stringify({ ...allowed, allowedContent })}`);
   }
 
   const deniedPath = join(workspace, "denied.txt");

@@ -95,7 +95,7 @@ flowchart TB
 
 workspace keyは最低でもcanonical absolute cwdから導出します。symlink解決、大文字小文字、存在しないpathの扱いはplatformごとのテストで固定します。
 
-中立コアがbridgeへ渡す操作は`cancelGeneration`、`respondStructuredInput`、`respondPermission`です。3.3.6 adapterは`zcode-agent`上の`stopSession` / `respondUserInput` / response objectへ、3.8.1 adapterは`zcode-task`上の`stopGeneration` / `respondElicitation` / option IDへ変換します。3.8.1のnative `taskId`は公開session IDと同じopaque IDですが、parameter名の変換はadapter内だけで行います。
+中立コアがbridgeへ渡す操作は`cancelGeneration`、`respondStructuredInput`、`respondPermission`です。3.3.6 adapterは`zcode-agent`上の`stopSession` / `respondUserInput` / response objectへ、3.8.1および3.9.1 adapterは`zcode-task`上の`stopGeneration` / `respondElicitation` / option IDへ変換します。3.8.1および3.9.1のnative `taskId`は公開session IDと同じopaque IDですが、parameter名の変換はadapter内だけで行います。
 
 ### 2.4 ZCode protocol client
 
