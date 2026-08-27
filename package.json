@@ -1,6 +1,6 @@
 {
   "name": "zcode-acp",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "ACP v1 and Paseo OpenCode-compatible adapters for the installed ZCode runtime",
   "type": "module",
   "private": true,
