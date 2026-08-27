@@ -101,7 +101,7 @@ try {
     true,
   );
   const allowedContent = await readFile(allowedPath, "utf8");
-  // ZCode 3.9.1's Write tool appends one trailing newline; this probe verifies permission flow.
+  // ZCode's Write tool may append one trailing newline; this probe verifies permission flow.
   if (
     allowed.permissionCount === 0 ||
     (allowedContent !== "allowed" && allowedContent !== "allowed\n")

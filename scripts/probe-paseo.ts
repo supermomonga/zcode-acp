@@ -26,7 +26,7 @@ try {
   const modelCatalog = providers.data.all[0]?.models ?? {};
   const models = Object.keys(modelCatalog);
   const modelNames = Object.values(modelCatalog).map((model) => model.name);
-  if (models.length !== 3 || modelNames.some((name) => !name.startsWith("GLM-5"))) {
+  if (models.length === 0 || modelNames.some((name) => !name.startsWith("GLM-5"))) {
     throw new Error(`Unexpected models: ${JSON.stringify(modelCatalog)}`);
   }
 

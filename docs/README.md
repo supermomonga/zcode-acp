@@ -38,6 +38,7 @@ flowchart LR
 
 | Target | Result |
 | --- | --- |
+| macOS arm64 | ZCode 3.9.2 build 3.9.2.6069 / CLI 0.16.5、実モデル・tool・permission・structured input・cancel・resume pass |
 | macOS arm64 | ZCode 3.9.1 build 3.9.1.5853 / CLI 0.16.5、実モデル・tool・permission・structured input・cancel・resume pass |
 | macOS arm64 | ZCode 3.3.6 build 3.3.6.3198 / CLI 0.15.2、実モデル・tool・permission・cancel pass |
 | Linux x64 | 公式3.3.6-3198 `.deb`、displayなしcontainerで同じE2E pass |

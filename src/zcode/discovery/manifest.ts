@@ -84,6 +84,31 @@ const ZCODE_3_9_1_HOST_CONTRACT: HostContractDescriptor = {
   },
 };
 
+const ZCODE_3_9_2_HOST_CONTRACT: HostContractDescriptor = {
+  id: "zcode-host-3.9.2",
+  hostIndexRelativePath: "out/host/index.js",
+  hostRpcModuleRelativePath: "out/host/chunk-KGXW6KHC.js",
+  hostIndexSha256: "110242d25a1157b089bef2249f7e2479dbeb439eb54e5e60a6c1eb7285f9a198",
+  hostRpcModuleSha256: "e66203598b60d8728260ad7631f295f9d6deb8276b06e8f0cab8776773c75b31",
+  rpcExports: { protocol: "g", client: "i", service: "j" },
+  serviceChannels: { agent: "zcode-agent", task: "zcode-task" },
+  operations: {
+    cancelGeneration: { method: "stopGeneration", service: "task", sessionParameter: "taskId" },
+    respondStructuredInput: {
+      method: "respondElicitation",
+      service: "task",
+      sessionParameter: "taskId",
+      responseShape: "flattened",
+    },
+    respondPermission: {
+      method: "respondPermission",
+      service: "task",
+      sessionParameter: "taskId",
+      answerShape: "optionId",
+    },
+  },
+};
+
 const COMPATIBILITY_ENTRIES: readonly CompatibilityEntry[] = [
   {
     platform: "darwin-arm64",
@@ -113,6 +138,16 @@ const COMPATIBILITY_ENTRIES: readonly CompatibilityEntry[] = [
     cliSha256: "427ac6862771e29533ec69a3e9d801964cad98226463617ba461cc310bf6a850",
     metadataSha256: "3cb76cfe74da2c647e077cbd35a0868034769ca04212f5ef8ac87fccb8ba4660",
     hostContract: ZCODE_3_9_1_HOST_CONTRACT,
+    releaseGatesPassed: true,
+  },
+  {
+    platform: "darwin-arm64",
+    appVersion: "3.9.2",
+    appBuild: "3.9.2.6069",
+    cliVersion: "0.16.5",
+    cliSha256: "780683d8f9c003c2e1b629214de7987c9a533cdc486ce0fa3e5f3f4d39ece184",
+    metadataSha256: "3cb76cfe74da2c647e077cbd35a0868034769ca04212f5ef8ac87fccb8ba4660",
+    hostContract: ZCODE_3_9_2_HOST_CONTRACT,
     releaseGatesPassed: true,
   },
   {

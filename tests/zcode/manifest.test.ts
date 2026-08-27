@@ -198,4 +198,60 @@ describe("ZCode compatibility manifest", () => {
     expect(assessCompatibility({ ...identity, metadataSha256: "different" }).status)
       .toBe("unsupported");
   });
+
+  test("recognizes the release-gated ZCode 3.9.2 macOS artifact", () => {
+    expect(
+      assessCompatibility({
+        platform: "darwin-arm64",
+        appVersion: "3.9.2",
+        appBuild: "3.9.2.6069",
+        cliVersion: "0.16.5",
+        cliSha256: "780683d8f9c003c2e1b629214de7987c9a533cdc486ce0fa3e5f3f4d39ece184",
+        metadataSha256: "3cb76cfe74da2c647e077cbd35a0868034769ca04212f5ef8ac87fccb8ba4660",
+        bundle: {
+          runtime: "electron-node",
+          entry: "zcode.cjs",
+          platform: "darwin-arm64",
+          source: "apps/zcode-cli/packages/cli/dist/zcode.cjs",
+        },
+      }),
+    ).toMatchObject({
+      status: "supported",
+      cliIntegrity: "verified",
+      expectedCliSha256: "780683d8f9c003c2e1b629214de7987c9a533cdc486ce0fa3e5f3f4d39ece184",
+      hostContract: {
+        id: "zcode-host-3.9.2",
+        hostIndexSha256: "110242d25a1157b089bef2249f7e2479dbeb439eb54e5e60a6c1eb7285f9a198",
+        hostRpcModuleRelativePath: "out/host/chunk-KGXW6KHC.js",
+      },
+    });
+  });
+
+  test("reports a modified ZCode 3.9.2 CLI without broadening artifact matching", () => {
+    const identity = {
+      platform: "darwin-arm64",
+      appVersion: "3.9.2",
+      appBuild: "3.9.2.6069",
+      cliVersion: "0.16.5",
+      cliSha256: "modified",
+      metadataSha256: "3cb76cfe74da2c647e077cbd35a0868034769ca04212f5ef8ac87fccb8ba4660",
+      bundle: {
+        runtime: "electron-node" as const,
+        entry: "zcode.cjs",
+        platform: "darwin-arm64",
+        source: "apps/zcode-cli/packages/cli/dist/zcode.cjs",
+      },
+    };
+
+    expect(assessCompatibility(identity)).toMatchObject({
+      status: "supported",
+      cliIntegrity: "modified",
+      expectedCliSha256: "780683d8f9c003c2e1b629214de7987c9a533cdc486ce0fa3e5f3f4d39ece184",
+      hostContract: { id: "zcode-host-3.9.2" },
+    });
+    expect(assessCompatibility({ ...identity, appBuild: "3.9.2.6070" }).status)
+      .toBe("unsupported");
+    expect(assessCompatibility({ ...identity, metadataSha256: "different" }).status)
+      .toBe("unsupported");
+  });
 });
