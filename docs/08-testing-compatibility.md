@@ -14,6 +14,8 @@ build successだけでは、private protocol adapterの正しさを保証でき�
 
 | Component | Version/platform | Evidence | Status |
 | --- | --- | --- | --- |
+| ZCode app | 3.9.2 build 3.9.2.6069 / macOS arm64 | exact host hashes、verified CLI integrity、実model/tool/permission/input/cancel/resume E2E | supported |
+| ZCode CLI | 0.16.5 / darwin-arm64 | bundled runtime version/doctor、3.9.2 host E2E | supported |
 | ZCode app | 3.9.1 build 3.9.1.5853 / macOS arm64 | exact host hashes、verified CLI integrity、実model/tool/permission/input/cancel/resume E2E | supported |
 | ZCode CLI | 0.16.5 / darwin-arm64 | bundled runtime version/doctor、host E2E | supported |
 | ZCode app | 3.8.1 build 3.8.1.5310 / macOS arm64 | exact host hashes、official/modified CLI integrity、実model/tool/permission/input/cancel/resume E2E | supported |
@@ -29,7 +31,7 @@ build successだけでは、private protocol adapterの正しさを保証でき�
 | Paseo OpenCode facade | Paseo `c60fa098a` / `@opencode-ai/sdk` 1.14.46 | standalone binary + real SDK/model、GLM-only catalog、SSE/tool/history/restart-resume/delete | pass |
 | Paseo daemon | 0.5.1 / macOS arm64 | isolated daemon、provider models、agent create/read、same-agent send/resume、stop/cancel | pass |
 
-support matrixはapp/build/platform、`zcode.cjs version`が返すCLI version、metadata hashでhost contract候補を選び、host index/host RPC module SHA-256とrequired exportを完全一致で検証します。3.9.1の公式CLI SHA-256は`427ac686…6a850`、metadataは`3cb76cfe…4660`、host indexは`4b36d070…a9e1d`、host RPCは`e6620359…75b31`です。CLI hashだけが異なる場合は`modified`と診断し、host互換性とは分離します。
+support matrixはapp/build/platform、`zcode.cjs version`が返すCLI version、metadata hashでhost contract候補を選び、host index/host RPC module SHA-256とrequired exportを完全一致で検証します。3.9.2の公式CLI SHA-256は`780683d8…ece184`、metadataは`3cb76cfe…4660`、host indexは`110242d2…9a198`、host RPCは`e6620359…75b31`です。host RPCは3.9.1と同一ですが、変更されたhost indexは3.9.2固有の値として検証します。CLI hashだけが異なる場合は`modified`と診断し、host互換性とは分離します。
 
 ## 3. Test layers
 
@@ -284,7 +286,7 @@ help outputだけが変わらなくてもprivate schemaが変わる可能性が�
 - secret redaction/stdout isolation pass
 - SHA-256 checksumsとSPDX SBOM生成
 
-ZCode 3.3.6はmacOS arm64とLinux x64、ZCode 3.8.1 build 3.8.1.5310およびZCode 3.9.1 build 3.9.1.5853はmacOS arm64でGate A-Dを通過済みです。加えてToad 0.6.20とacpx 0.12.0のbaseline接続を通過済みです。permission画面やcancel操作などclient固有UXの追加検証結果を、adapter capabilityへ混ぜません。
+ZCode 3.3.6はmacOS arm64とLinux x64、ZCode 3.8.1 build 3.8.1.5310、ZCode 3.9.1 build 3.9.1.5853、およびZCode 3.9.2 build 3.9.2.6069はmacOS arm64でGate A-Dを通過済みです。加えてToad 0.6.20とacpx 0.12.0のbaseline接続を通過済みです。permission画面やcancel操作などclient固有UXの追加検証結果を、adapter capabilityへ混ぜません。
 
 ## 10. Evidence record format
 

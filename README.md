@@ -32,6 +32,7 @@
 
 | Platform | ZCode | CLI | Status |
 | --- | --- | --- | --- |
+| macOS arm64 | 3.9.2 build 3.9.2.6069 | 0.16.5 | Supported |
 | macOS arm64 | 3.9.1 build 3.9.1.5853 | 0.16.5 | Supported |
 | macOS arm64 | 3.8.1 build 3.8.1.5310 | 0.16.3 | Supported |
 | macOS arm64 | 3.3.6 build 3.3.6.3198 | 0.15.2 | Supported |
