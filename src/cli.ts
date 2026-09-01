@@ -5,6 +5,7 @@ import { safeError } from "./diagnostics/redaction.ts";
 import { HeadlessZCodeSessionService } from "./acp/v1/session-service.ts";
 import { serveAcpStdio } from "./acp/v1/server.ts";
 import { parseArguments } from "./cli/arguments.ts";
+import { createDoctorReport } from "./cli/doctor-report.ts";
 import {
   createPaseoEngine,
   PASEO_OPENCODE_SDK_VERSION,
@@ -99,27 +100,7 @@ async function main(argv: readonly string[]): Promise<number> {
 
   const runtime = await discoverRuntime(discoveryOptions);
   const smoke = await runRuntimeSmoke(runtime);
-  const report = {
-    platform: runtime.identity.platform,
-    zcodeInstall: runtime.paths.installRoot,
-    zcodeAppVersion: runtime.identity.appVersion ?? null,
-    zcodeBuild: runtime.identity.appBuild ?? null,
-    zcodeCliVersion: runtime.identity.cliVersion ?? smoke.cliVersion ?? null,
-    runtime: runtime.identity.bundle.runtime,
-    cliSha256: runtime.identity.cliSha256,
-    expectedCliSha256: runtime.expectedCliSha256 ?? null,
-    cliIntegrity: runtime.cliIntegrity ?? null,
-    metadataSha256: runtime.identity.metadataSha256,
-    hostContract: runtime.hostContract?.descriptor.id ?? null,
-    hostIndexSha256: runtime.hostContract?.hostIndexSha256 ?? null,
-    hostRpcModuleSha256: runtime.hostContract?.hostRpcModuleSha256 ?? null,
-    compatibility: runtime.compatibility,
-    compatibilityReason: runtime.compatibilityReason,
-    runtimeSmoke: smoke.passed ? "passed" : "failed",
-    authentication: smoke.authentication,
-    providerHeadersBridge: "installed-host",
-    installRootWritableByGroupOrOthers: runtime.writableInstallRoot,
-  };
+  const report = createDoctorReport(runtime, smoke);
 
   if (args.json) {
     process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);

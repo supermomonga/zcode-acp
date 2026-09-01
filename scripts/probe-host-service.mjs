@@ -12,8 +12,8 @@ if (process.env.ZCODE_ACP_ENABLE_CONTRACT_PROBE !== "1") {
 }
 
 const runtime = await discoverRuntime();
-if (runtime.hostContract === undefined) {
-  throw new Error(`No investigated host contract: ${runtime.compatibilityReason}`);
+if (runtime.resolvedHost === undefined) {
+  throw new Error(`No supported host artifact/protocol: ${runtime.compatibilityReason}`);
 }
 const workspacePath = await mkdtemp(join(tmpdir(), "zcode-acp-host-probe-"));
 await writeFile(
@@ -25,7 +25,6 @@ const bridge = ZCodeHostBridge.start(
   runtime,
   new NullLogger(),
   process.env,
-  { allowDevelopmentCandidate: true },
 );
 const AnySchema = z.unknown();
 const call = (method, params) => bridge.request(method, params, AnySchema, 60_000);

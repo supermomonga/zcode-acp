@@ -26,19 +26,19 @@
 - Fail-closed host compatibility checks with separate CLI integrity reporting
 - Paseo integration through an OpenCode SDK 1.14.46-compatible HTTP/SSE facade
 
-`additionalDirectories` and session deletion are not advertised because the supported ZCode hosts do not provide the required APIs. `session/list` requires a working directory to match the ZCode host contract and returns invalid params when it is omitted. If structured input is required but the ACP client does not support form elicitation, the adapter declines the native request and explicitly stops the turn.
+`additionalDirectories` is not advertised because the current ZCode host does not provide the required API. `session/list` requires a working directory to match the ZCode host protocol and returns invalid params when it is omitted. If structured input is required but the ACP client does not support form elicitation, the adapter declines the native request and explicitly stops the turn.
 
 ## Supported runtime
 
-| Platform | ZCode | CLI | Status |
-| --- | --- | --- | --- |
-| macOS arm64 | 3.9.2 build 3.9.2.6069 | 0.16.5 | Supported |
-| macOS arm64 | 3.9.1 build 3.9.1.5853 | 0.16.5 | Supported |
-| macOS arm64 | 3.8.1 build 3.8.1.5310 | 0.16.3 | Supported |
-| macOS arm64 | 3.3.6 build 3.3.6.3198 | 0.15.2 | Supported |
-| Linux x64 | 3.3.6-3198 official `.deb` | 0.15.2 | Supported |
+Only the latest verified ZCode release is supported. Updating the manifest replaces the previous release instead of adding a compatibility branch.
 
-Compatibility requires an exact app/build/platform, CLI version, metadata hash, host index hash, host RPC module hash, and required RPC exports. A different `zcode.cjs` hash is reported as `cliIntegrity: "modified"` but does not invalidate an otherwise verified host contract. Run `doctor --json` to inspect both decisions.
+| ZCode | CLI | Host artifact | Host protocol |
+| --- | --- | --- | --- |
+| 3.10.2 | 0.16.5 | `zcode-host-3.10.2` | `zcode-task-v1` |
+
+The same ZCode version resolves to this single artifact and protocol on macOS, Linux, and Windows. Operating-system-specific code is limited to locating the installed files and requiring the metadata platform to exactly match the running OS and architecture.
+
+Compatibility requires the known metadata semantics, an exact process/metadata platform match, the current app and CLI versions, exact host index and RPC-module hashes, and the required RPC exports. The app build and raw metadata SHA-256 remain diagnostic fields only. A different `zcode.cjs` hash is reported as `cliIntegrity: "modified"` but does not invalidate an otherwise verified host artifact. Run `doctor --json` to inspect `hostArtifact`, `hostProtocol`, and both decisions.
 
 ## Development
 
@@ -125,7 +125,7 @@ npx acpx@latest \
   "Reply with exactly OK"
 ```
 
-On Linux, install the official `.deb` normally and sign in to ZCode as the Linux user that will run the adapter. When migrating state from another operating system, credentials can only be decrypted if ZCode's `ZCODE_CREDENTIAL_SECRET` has the same value on the source and destination systems. `zcode-acp` does not copy, decrypt, or transform credentials.
+On Linux, install the official package normally and sign in to ZCode as the Linux user that will run the adapter. When migrating state from another operating system, credentials can only be decrypted if ZCode's `ZCODE_CREDENTIAL_SECRET` has the same value on the source and destination systems. `zcode-acp` does not copy, decrypt, or transform credentials.
 
 ## Privacy and terms
 

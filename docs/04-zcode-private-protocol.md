@@ -1,22 +1,44 @@
-# ZCode private host contract
+# ZCode private host protocol
 
 ## 1. Scope
 
-対象はcompatibility manifestに登録されたZCode 3.3.6 / CLI 0.15.2、ZCode 3.8.1 / CLI 0.16.3、ならびにZCode 3.9.1および3.9.2 / CLI 0.16.5の`app.asar/out/host`に含まれる公式local host serviceです。公開APIではないため、app/build/platform、CLI version、metadata hashとhost hash/exportが一致するartifactにだけ適用します。CLI本文のSHA-256はintegrity診断であり、host contractの選択条件ではありません。
+対象はZCode 3.10.2 / CLI 0.16.5の`app.asar/out/host`に含まれる公式local host serviceです。これは公開APIではないため、現在のmanifestが示すartifact fingerprintと完全一致する場合だけ起動します。
 
-`zcode.cjs app-server --stdio`の直接protocolも調査しましたが、desktopのmodel-provider registryを持たないためproduction経路には採用していません。
+`zcode.cjs app-server --stdio`の直接protocolはdesktopのmodel-provider registryを持たないため、production経路には採用しません。
 
-## 2. Launch and bridge
+## 2. Artifactとprotocolの分離
+
+`HostArtifactDescriptor`は実ファイルの同一性を表します。
+
+- ID: `zcode-host-3.10.2`
+- app version: `3.10.2`
+- CLI version: `0.16.5`
+- host index: `out/host/index.js`
+- RPC module: `out/host/chunk-KGXW6KHC.js`
+- required exports: `g`、`i`、`j`
+
+`HostProtocolDescriptor`は意味変換を表します。
+
+- ID: `zcode-task-v1`
+- common service: `zcode-agent`
+- task service: `zcode-task`
+- cancel: `stopGeneration({taskId})`
+- structured input: `respondElicitation({taskId, requestId, action, content})`
+- permission: `respondPermission({taskId, requestId, optionId})`
+
+artifactの更新とprotocol意味論の更新を別の判断として扱います。artifactからprotocol IDへの参照が一致しない場合も起動しません。
+
+## 3. Launch and bridge
 
 1. インストール済みZCodeのElectron executableを`ELECTRON_RUN_AS_NODE=1`で起動
 2. `worker_threads.Worker`内で公式`out/host/index.js`をimport
-3. Electron utility-processの`process.parentPort` event shapeをNode `MessagePort`へadapter
-4. manifestのhost contract descriptorが指定するRPC module/exportとservice channelへ接続
+3. Electron utility-processの`process.parentPort` event shapeをNode `MessagePort`へ変換
+4. descriptorが指定するRPC module/exportとservice channelへ接続
 5. allowlist済みservice methodだけを内部NDJSON bridgeへ公開
 
-bridgeのsuccess responseは、公式methodが`undefined`を返す場合も`result: null`を明示します。field省略はrequest相関を壊すため禁止です。公式hostのstdout/stderrはadapterのACP stdoutへ流しません。
+bridgeのsuccess responseは、公式methodが`undefined`を返す場合も`result: null`を明示します。公式hostのstdout/stderrはACP stdoutへ流しません。
 
-## 3. Internal envelope
+## 4. Internal envelope
 
 ```json
 {"id":1,"method":"initialize","params":{"workspacePath":"/workspace"}}
@@ -31,103 +53,46 @@ bridgeのsuccess responseは、公式methodが`undefined`を返す場合も`resu
 - malformed/unknown responseはfail closed
 - late responseはpending requestがなければ無視
 
-## 4. Versioned host contracts
-
-| Semantic operation | 3.3.6 contract | 3.8.1 / 3.9.1 / 3.9.2 contract |
-| --- | --- | --- |
-| service channel | `zcode-agent` | common: `zcode-agent`; task interaction: `zcode-task` |
-| cancel | `stopSession({sessionId})` | `stopGeneration({taskId})` |
-| structured input | `respondUserInput({sessionId, requestId, response})` | `respondElicitation({taskId, requestId, action, content})` |
-| permission | `respondPermission({sessionId, requestId, response})` | `respondPermission({taskId, requestId, optionId})` |
-
-`initialize`、`readWorkspaceState`、`createSession`、`sendPrompt`、`closeSession`、`respondProviderRuntimeHeaders`、`disposeWorkspace`とsubscriptionは共通agent serviceで扱います。このlistおよびdescriptorで宣言したtask操作以外のprivate methodはRPC経由で呼べません。
-
-3.8.1 descriptorはhost index `out/host/index.js`とRPC module `out/host/chunk-LVLFJXEE.js`、3.9.1および3.9.2 descriptorは同じhost index pathとRPC module `out/host/chunk-KGXW6KHC.js`を固定します。3.9.2ではRPC moduleが3.9.1と一致する一方でhost indexが変更されているため、artifactごとのSHA-256と必要な`g/i/j` exportをworker起動前に個別検証します。pathがinstall rootを逸脱する場合もfail closedです。
-
-このlist以外のprivate methodはRPC経由で呼べません。
-
 ## 5. Dynamic event schema
 
-top-level eventは次のdiscriminated unionだけを受理します。
+top-level eventは`snapshot`、`state.updated`、`permission.request`、`userInput.request`、`userInput.response`、`providerRuntimeHeaders.request`、`session.event`だけを受理します。
 
-- `snapshot`
-- `state.updated`
-- `permission.request`
-- `userInput.request`
-- `userInput.response`
-- `providerRuntimeHeaders.request`
-- `session.event`
-
-`session.event`は`eventId`、`sessionId`、non-negative `seq`、timestamp、delivery kind、type、payloadを必須とします。MVPで処理するtype:
-
-- `model.streaming`
-- `tool.updated`
-- `turn.completed`
-- `turn.failed`
-- state-only event: `session.updated`、`session.titleUpdated`、`streamRecovery.updated`、`turn.started`、permission lifecycle
-
-未知typeを成功終了へ丸めません。
-
-### Model stream kinds
-
-- `text_delta`
-- `reasoning_delta`
-- `tool_input_start`
-- `tool_input_delta`
-- `tool_input_end`
-- `tool_call`
-
-### Tool update kinds
-
-- `scheduled`
-- `started`
-- `progress`
-- `result`
-- `error`
-- `batch`
-
-tool inputはdeltaを結合してJSON parseを試し、raw input/outputもACP updateへ保持します。
-`progress`は実行中状態への非終端更新として扱い、ACP `tool_call_update`の
-`status: "in_progress"`へ変換します。`stdoutTail`、`stderrTail`、PID、経過時間、
-バイト数は途中時点のZCode固有メタデータであり、ACPの`content`、`rawOutput`、`_meta`には転送しません。
+`session.event`は`eventId`、`sessionId`、non-negative `seq`、timestamp、delivery kind、type、payloadを必須とします。model stream、tool update、turn terminal、session stateの未知typeを成功終了へ丸めません。
 
 ## 6. Reverse interactions
 
 ### Permission
 
-native optionの`optionId`、name、意味上のresponseを保持し、decisionとpersistent updateの有無からACPのallow/reject once/alwaysへ写像します。ACP clientが返したIDが元optionに存在しなければ拒否します。client cancel/error/disconnect時は実在するdeny optionを選び、3.3.6にはresponse、3.8.1、3.9.1、および3.9.2にはoption IDをexactly onceで返します。
+native optionの`optionId`、name、意味を保持してACPの選択肢へ一対一で写像します。ACP clientが返したIDが元optionに存在しなければ拒否します。cancel/error/disconnect時は実在するdeny optionを選び、option IDをexactly onceで返します。
 
 ### Structured user input
 
-form elicitation capabilityを持つACP clientには複数質問・multiple selectを保持して`elicitation/create`へ変換します。3.8.1、3.9.1、および3.9.2ではclient応答を`action`と`content`へ平坦化し、`respondElicitation`へ渡します。form非対応clientではpermission APIや空文字で代替せず、実際のdecline応答を返してturnを`INTERACTION_UNSUPPORTED`で停止します。
+form elicitation capabilityを持つACP clientには複数質問・multiple selectを保持して`elicitation/create`へ変換します。client応答は`action`と`content`へ平坦化して`respondElicitation`へ渡します。form非対応clientでは実際のdecline応答を返し、turnを`INTERACTION_UNSUPPORTED`で停止します。
 
 ### Provider runtime headers
 
-通常のCoding Plan provider headerは、公式host内のmodel-provider serviceがcredentialとprovider registryからruntime modelを構築するため、adapterがheader値を受け取りません。captcha retry等でhostからinteractive requestが上がった場合、headlessで完了できないため`headersApplied: false`を返し、turnを明示的に停止します。
+通常のprovider headerは公式host内のmodel-provider serviceがcredentialとregistryから構築するため、adapterは値を受け取りません。hostからinteractive requestが来た場合は`headersApplied: false`を返し、turnを明示的に停止します。
 
-## 7. Terminal mapping
+## 7. Compatibility identity
 
-| Native `resultType` | ACP StopReason |
-| --- | --- |
-| `success` | `end_turn` |
-| `max_tokens`, `token_limit` | `max_tokens` |
-| `max_turn_requests`, `request_limit` | `max_turn_requests` |
-| `refusal` | `refusal` |
-| `cancelled`, `interrupted`, `stopped` | `cancelled` |
+互換性判定は次の順序で行います。
 
-未知resultは`end_turn`にせずprotocol errorです。cancel後はnative terminal eventを待ち、30秒で届かなければtimeoutにします。
+1. metadataの`runtime`、`entry`、`source`を既知値と照合
+2. metadata platformを実行中のOS/architectureと完全一致で検証
+3. app versionとCLI versionを現在のmanifestと照合
+4. host index、RPC module、required exportsを完全一致で検証
+5. CLI SHA-256の差分を`modified`と診断
 
-## 8. Compatibility identity
+app buildとmetadata raw SHA-256は診断表示だけで、互換性条件ではありません。CLIが`modified`でもhost artifactが一致すれば起動を許可します。
+
+同一app versionのCLIとhost内容は全OSで同一と扱います。OS別manifest entryは作らず、OS差はinstall layoutとmetadata platform一致に限定します。未知OSはlayout解決時に拒否します。
+
+## 8. Current fingerprints
 
 ```text
-platform + architecture
-+ app version/build where available
-+ CLI version
-+ `zcode.cjs version`のCLI version
-+ zcode.cjs SHA-256（公式artifactとの差分診断）
-+ .node-bundle-meta.json SHA-256
-+ host index SHA-256
-+ host RPC module path + SHA-256 + required exports
+CLI SHA-256:        3597160465b67da248fa3fb919920ca30d4e093003a4d70cde2a2e33903cbabc
+host index SHA-256: 72e57751ed5563338335a52cd688c7fba0707ef72d8ce782356b1f0b39c77462
+RPC module SHA-256: e66203598b60d8728260ad7631f295f9d6deb8276b06e8f0cab8776773c75b31
 ```
 
-未知identityにunsafe bypassやsystem runtime fallbackはありません。
+未知identityにunsafe bypass、旧response形式、system runtime fallbackはありません。

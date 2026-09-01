@@ -1,6 +1,6 @@
 # zcode-acp 設計・実装資料
 
-最終更新: 2026-07-19
+最終更新: 2026-09-01
 
 このディレクトリは、ZCodeのエージェント機能をGUIなしで利用し、ACP v1 clientへ公開する`zcode-acp`の調査、仕様、実装判断、検証結果をまとめます。
 
@@ -30,19 +30,17 @@ flowchart LR
 | ZCode起動 | 公式Electron Node runtimeで公式host serviceをworkerとして起動 |
 | Node.js | system Nodeへfallbackしない |
 | 配布 | ZCodeを再配布せず、adapterだけをstandalone binary化 |
-| 互換性 | app/build/platform、CLI version、metadata/host contractがsupport matrixにない場合fail closed。CLI hash差分はintegrity診断 |
+| 互換性 | 最新ZCode 1 versionだけを対象に、metadata semantics、process platform、app/CLI version、host hash/exportをfail closedで検証。buildとmetadata raw hashは診断のみ |
 | 権限 | native optionをACP permissionへ一対一変換。自動承認しない |
 | ログ | stdoutはACP専用。stderrもsecret/prompt/headerをredact |
 
-## 検証済みsnapshot
+## 現在の互換性対象
 
-| Target | Result |
-| --- | --- |
-| macOS arm64 | ZCode 3.9.2 build 3.9.2.6069 / CLI 0.16.5、実モデル・tool・permission・structured input・cancel・resume pass |
-| macOS arm64 | ZCode 3.9.1 build 3.9.1.5853 / CLI 0.16.5、実モデル・tool・permission・structured input・cancel・resume pass |
-| macOS arm64 | ZCode 3.3.6 build 3.3.6.3198 / CLI 0.15.2、実モデル・tool・permission・cancel pass |
-| Linux x64 | 公式3.3.6-3198 `.deb`、displayなしcontainerで同じE2E pass |
-| ACP | new/load/resume/list/close/config/prompt/cancelとwire updateを実processで確認 |
+| ZCode | CLI | Host artifact | Host protocol |
+| --- | --- | --- | --- |
+| 3.10.2 | 0.16.5 | `zcode-host-3.10.2` | `zcode-task-v1` |
+
+同一versionのCLIとhost内容はOS間で同一と扱い、OS別manifest entryは作りません。OS差はinstall layoutとmetadata platformの照合だけに限定します。実行済み検証と未実施項目は[Implementation status](10-implementation-status.md)に分離して記録します。
 
 structured user inputはACP v1.19のform elicitationへ写像します。clientがform elicitationをadvertiseしない場合だけnative requestをdeclineし、空値で成功扱いしません。
 
@@ -61,4 +59,4 @@ structured user inputはACP v1.19のform elicitationへ写像します。client�
 11. [References and evidence](references.md)
 12. [Implementation status](10-implementation-status.md)
 
-実機結果と未対応範囲を区別し、version文字列だけで互換性を推測しないことが本projectの方針です。
+実機結果と未対応範囲を区別し、version文字列だけで互換性を推測しないことが本projectの方針です。新しいZCode releaseへ移行するときは旧artifactを置換し、後方互換分岐を残しません。

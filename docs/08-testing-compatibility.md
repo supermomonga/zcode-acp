@@ -1,316 +1,106 @@
 # Testing and compatibility
 
-## 1. 検証方針
-
-build successだけでは、private protocol adapterの正しさを保証できません。検証は次の三層をすべて必要とします。
-
-1. 公開ACP contractへの適合
-2. ZCode private contractへの適合
-3. 実際のZCode runtime、provider、ACP clientを通したend-to-end behavior
-
-課金やworkspace変更を伴うtestは明示的なE2E suiteへ分離し、通常unit testで実行しません。
-
-## 2. 現在のcompatibility snapshot
-
-| Component | Version/platform | Evidence | Status |
-| --- | --- | --- | --- |
-| ZCode app | 3.9.2 build 3.9.2.6069 / macOS arm64 | exact host hashes、verified CLI integrity、実model/tool/permission/input/cancel/resume E2E | supported |
-| ZCode CLI | 0.16.5 / darwin-arm64 | bundled runtime version/doctor、3.9.2 host E2E | supported |
-| ZCode app | 3.9.1 build 3.9.1.5853 / macOS arm64 | exact host hashes、verified CLI integrity、実model/tool/permission/input/cancel/resume E2E | supported |
-| ZCode CLI | 0.16.5 / darwin-arm64 | bundled runtime version/doctor、host E2E | supported |
-| ZCode app | 3.8.1 build 3.8.1.5310 / macOS arm64 | exact host hashes、official/modified CLI integrity、実model/tool/permission/input/cancel/resume E2E | supported |
-| ZCode CLI | 0.16.3 / darwin-arm64 | bundled runtime version/doctor、host E2E | supported |
-| ZCode app | 3.3.6 build 3.3.6.3198 / macOS arm64 | metadata/hash、official host、実model/tool/cancel E2E | supported |
-| ZCode CLI | 0.15.2 / darwin-arm64 | bundled runtime version/doctor、host E2E | supported |
-| ZCode Linux package | 3.3.6-3198 / linux-x64 | official `.deb`、displayなしUbuntu container E2E | supported |
-| ZCode official host | 3.3.6 / darwin-arm64 + linux-x64 | provider registry、stream、permission、cancel | supported subset |
-| ACP | protocol v1、schema-v1.19.0 | SDK wire test、real process probe | MVP pass |
-| ACP v2 | protocol v2 draft | stable baseline schemaと公式migration文書 | unsupported |
-| Toad | 0.6.20 / macOS arm64 | 実process log、initialize/session/new/prompt stream/end_turn | baseline pass |
-| acpx | 0.12.0 / macOS arm64 | strict JSON output、initialize/session/new/tool/text/end_turn | baseline pass |
-| Paseo OpenCode facade | Paseo `c60fa098a` / `@opencode-ai/sdk` 1.14.46 | standalone binary + real SDK/model、GLM-only catalog、SSE/tool/history/restart-resume/delete | pass |
-| Paseo daemon | 0.5.1 / macOS arm64 | isolated daemon、provider models、agent create/read、same-agent send/resume、stop/cancel | pass |
-
-support matrixはapp/build/platform、`zcode.cjs version`が返すCLI version、metadata hashでhost contract候補を選び、host index/host RPC module SHA-256とrequired exportを完全一致で検証します。3.9.2の公式CLI SHA-256は`780683d8…ece184`、metadataは`3cb76cfe…4660`、host indexは`110242d2…9a198`、host RPCは`e6620359…75b31`です。host RPCは3.9.1と同一ですが、変更されたhost indexは3.9.2固有の値として検証します。CLI hashだけが異なる場合は`modified`と診断し、host互換性とは分離します。
-
-## 3. Test layers
-
-### 3.1 Schema and mapper unit tests
-
-対象:
-
-- ACP initialize/session requests
-- private RPC envelope
-- event-to-update mapping
-- StopReason mapping
-- permission option mapping
-- error redaction
-- path canonicalization
-- version/hash support matrix
+## 1. 方針
 
-必須negative cases:
+現在のmanifestはZCode 3.10.2 / CLI 0.16.5だけを表し、新versionを採用するときはこのentryとfixturesを置換します。過去versionのentryは残しません。
 
-- unknown event type
-- missing requiredfield
-- duplicate tool call ID with incompatible shape
-- late native response
-- permission option ID mismatch
-- unknown terminal reason
-- malformed JSON/UTF-8
-- stdout nonprotocol text
+同一ZCode versionのCLIとhost内容は全OSで同一と扱います。OS別version entryやinstaller比較testは作らず、OS差はlayout解決とmetadata/process platform一致だけをtestします。
 
-### 3.2 Fake ZCode server integration tests
+## 2. Current contract
 
-実ZCodeを起動せず、固定NDJSONを話すfake childで次を検証します。
+| Field | Value |
+| --- | --- |
+| ZCode | `3.10.2` |
+| CLI | `0.16.5` |
+| CLI SHA-256 | `3597160465b67da248fa3fb919920ca30d4e093003a4d70cde2a2e33903cbabc` |
+| Host artifact | `zcode-host-3.10.2` |
+| Host index SHA-256 | `72e57751ed5563338335a52cd688c7fba0707ef72d8ce782356b1f0b39c77462` |
+| RPC module | `out/host/chunk-KGXW6KHC.js` |
+| RPC SHA-256 | `e66203598b60d8728260ad7631f295f9d6deb8276b06e8f0cab8776773c75b31` |
+| Required exports | `g`、`i`、`j` |
+| Host protocol | `zcode-task-v1` |
 
-- child spawn args/env/cwd
-- request ID correlation
-- subscribe-before-send ordering
-- backlog/live deduplication
-- streaming update order
-- reverse request round trip
-- native timeout
-- child crash
-- graceful stdin closeとforce cleanup
+## 3. Unit and integration tests
 
-fakeが実装都合の理想的protocolにならないよう、実ZCodeから得たredacted golden tracesを入力fixtureにします。
+### Identity and metadata
 
-### 3.3 ACP conformance integration tests
+- macOS、Linux、Windows identityが同じartifact/protocolへ解決される
+- metadataの`runtime`、`entry`、`source`を完全一致で検証する
+- metadata platformとprocess platformの不一致を拒否する
+- app buildとmetadata raw SHA-256の差分は判定へ影響しない
+- 未知OSはlayout解決時に拒否する
 
-official SDK/client harnessを使い、次をwire levelで検証します。
+### Artifact compatibility
 
-- initialize前method拒否
-- protocol version negotiation
-- capability honesty
-- session/new validation
-- v1 prompt response timing
-- update schemas
-- permission client request
-- cancellation semantics
-- JSON-RPC errors
-- stdout isolation
+- app/CLI versionが現在値と一致する
+- 旧app versionと未知CLI versionを拒否する
+- host index/RPC SHA-256とrequired exportsの差分を拒否する
+- CLI SHA-256差分は`supported`かつ`modified`になる
+- statusは`supported | unsupported`だけを返す
 
-### 3.4 Real ZCode smoke tests
+### Protocol semantics
 
-課金なし・read-only:
+- cancelを`stopGeneration({taskId})`へ変換する
+- structured inputを平坦な`action`/`content`で`respondElicitation`へ渡す
+- permissionは検証済み`optionId`を`respondPermission`へ渡す
+- 旧response objectやnested responseを受理しない
 
-- version
-- doctor
-- official host spawn
-- initialize/readWorkspaceState
-- create/close session
-- clean shutdown
+### Public diagnostics
 
-状態変更を伴う可能性があるmethodは専用temporary user/homeとworkspaceで実行します。
+- `doctor --json`は`hostArtifact`と`hostProtocol`を返す
+- `hostContract`を公開出力に含めない
+- app build、metadata raw SHA-256、CLI integrityを診断表示する
 
-### 3.5 Paid/stateful E2E tests
+## 4. Local runtime verification
 
-明示的credentialとbudgetを使い、次を確認します。
+release前に現在のmacOS ZCode 3.10.2で次を実行します。既存credentialの内容は表示・コピーしません。
 
-- session create
-- simple text response
-- multi-chunk streaming
-- read-only tool + permission
-- write tool allow/deny
-- user-input requestの明示的unsupported処理
-- cancel during model streaming
-- cancel during tool execution
-- provider runtime headers対象provider
-- persisted session resume/load
+1. frozen dependency install
+2. `bun run check`
+3. `doctor --json`
+4. `bun run build`
+5. `bun run release`による5 target build
+6. host initialize、session create/list/read/resume/close
+7. 実モデル応答とread/write tool
+8. permission allow/deny
+9. structured input
+10. cancel、history resume/delete
+11. ACP wireとPaseo facade
 
-workspaceは使い捨てGit repoとし、実行前後のdiffをassertします。
+実モデルを使う項目はworkspace dataがproviderへ送信され得るため、probe用一時directoryだけを対象にし、実行環境の承認を得て行います。
 
-### 3.6 Generic client tests
+## 5. GitHub Actions
 
-| Client class | Candidate | Purpose |
-| --- | --- | --- |
-| Human TUI | Toad | 実際のpermission、stream、cancel UX |
-| Headless/script | acpx | deterministic scenario、CI、JSON output |
-| Desktop agent client | Paseo | OpenCode-compatible provider、structured question、permission、resume |
+通常CIは`pull_request`と`main`へのpushで実行します。
 
-### 3.7 Paseo OpenCode compatibility tests
+- runner: `ubuntu-latest`だけ
+- Bun: `1.3.13`
+- install: `bun install --frozen-lockfile`
+- verification: `bun run check`
+- permissions: `contents: read`
+- 同一refの古いrunをcancel
 
-`tests/paseo/opencode-server.test.ts`はPaseoが固定している`@opencode-ai/sdk` 1.14.46を実クライアントとして使用します。対象はprovider/model、dynamic mode、session create/status/messages/delete、SSE stream、tool lifecycleとusage、MCP、複数question、multi-select、重複header、カンマを含むlabel、native permission、reply/reject/disconnectのexactly-once完了、cancel、persisted session resume/history、unsupported rewindです。
+Release workflowもUbuntuだけを使い、公開前の`bun run check`を必須にします。成果物はmacOS arm64/x64、Linux arm64/x64、Windows x64の5 targetです。
 
-この契約はversion negotiationで推測せず、SDK versionとPaseo commitを固定します。Paseo更新時はこのtestを新しいSDKへ更新して通過させてからcompatibility targetを変更します。
-| IDE | Zedなど | 標準ACP interoperabilityの追加確認 |
+## 6. New ZCode release procedure
 
-client固有設定やextensionを使わずにbaseline scenarioを通すtestと、optional capability testを分けます。
+1. 最新app/CLI versionを確認
+2. current CLI、host index、RPC module、required exportsを取得
+3. artifact descriptorを新releaseへ置換
+4. protocol意味論が変わった場合だけprotocol descriptorを置換
+5. fixtureと文書のcurrent値を置換
+6. 旧version分岐、fixture、support記述が残っていないことを検索
+7. unit/integration/local runtime verificationを完走
 
-2026-07-19のbaseline結果:
+旧releaseを別entryとして残したり、互換性を推測するfallbackを追加したりしません。
 
-- Toad 0.6.20: 外部commandとしてrelease binaryを起動し、`initialize`、`session/new`、複数の`agent_message_chunk`、`end_turn`を確認。最終textは`TOAD_OK`
-- acpx 0.12.0: strict JSON modeで同じrelease binaryを起動し、read toolのcreated/completed、複数text chunk、`end_turn`を確認
+## 7. Release decision
 
-permission選択画面やcancel操作のclient固有UXは、adapterのwire/runtime検証とは分離して継続確認します。
+release可能なのは次をすべて満たす場合です。
 
-## 4. Golden trace acquisition
-
-ZCode private event schemaの正本を作る手順:
-
-1. isolated test user/homeとtemporary workspaceを用意
-2. 対象ZCode app/build/CLI versionとCLI integrity/metadata/host index/host RPC hashを記録
-3. app-serverとの送受信をframe単位でcapture
-4. session ID、trace ID、path、prompt、token、headerをdeterministic placeholderへ置換
-5. request/response/event orderingを保持
-6. fixtureをschema validation
-7. 同じscenarioをfake server testへ追加
-
-redaction前のtraceをrepositoryへ保存しません。header requestを含むtraceは値をcaptureしないinstrumentationを優先します。
-
-必要scenario:
-
-- empty/simple assistant response
-- plan + thought + assistant text
-- tool start/progress/completion
-- permission allow/deny/cancel
-- native error
-- user input
-- provider headers
-- session stop
-- reconnect/resume
-- subscription snapshot/backlog/live boundary
-
-## 5. Contract tests by lifecycle
-
-### Initialization
-
-- v1 requestにv1 response
-- v2-only clientにはv1を選択してclient判断を促す、または規定error
-- unimplemented capabilityがない
-- agentInfoが正しい
-
-### Session creation
-
-- relative cwdを拒否
-- nonexistent/non-directory cwdを拒否
-- same workspaceのconcurrent createでchild spawnが一つ
-- different workspaceでchildを分離
-- native failure時にACP sessionを発行しない
-
-### Prompt
-
-- subscribe完了前にsendしない
-- event順を維持
-- prompt responseはterminal state後
-- unknown terminal reasonをend_turnにしない
-- second active promptをreject
-
-### Permission
-
-- 全optionのround trip
-- allow/deny/cancel
-- client disconnect
-- timeout
-- duplicate response
-- response after session cancel
-
-### Cancel
-
-- notificationにJSON-RPC responseを返さない
-- native stopは一回
-- in-flight updatesをterminal boundaryまで処理
-- original prompt responseはcancelled
-
-### Shutdown
-
-- stdin EOF
-- SIGTERM
-- child ignoring stdin close
-- child descendants cleanup
-- no orphan process
-
-## 6. Linux headless matrix
-
-最低matrix:
-
-| OS image | Arch | Display | Install | Auth | Prompt | Permission | Cancel |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| Ubuntu 24.04 | x64 | none | 3.3.6-3198 `.deb` | migrated test state with official cipher secret | pass | allow/deny pass | pass |
-| Debian stable | x64 | none | `.deb` | native user login | not run | not run | not run |
-
-Linux arm64はartifact内容と実行環境を確認後に行を追加します。未実行セルをpassとして埋めません。
-
-## 7. Performance and resource tests
-
-- first child startup latency
-- warm session/new latency
-- update throughputとbackpressure
-- large tool output時のmemory
-- multiple workspace childのmemory
-- idle child cleanup policy
-- prompt cancel latency
-- child shutdown latency
-
-performance optimizationでevent orderingやschema validationを省略しません。
-
-## 8. Update procedure for a new ZCode version
-
-1. 公式artifactを取得しsignature/checksumを記録
-2. app/build/platform、CLI version/integrity、metadata/host hashを採取
-3. launch smoke
-4. protocol method inventoryをdiff
-5. schema/golden tracesをdiff
-6. reverse request variantsをdiff
-7. full fake/conformance suite
-8. real macOS smoke
-9. Linux headless E2E
-10. client matrix
-11. support matrixとdocsを更新
-
-help outputだけが変わらなくてもprivate schemaが変わる可能性があります。version stringだけで互換判定しません。
-
-## 9. Release gates
-
-### Gate A: Contract known
-
-- MVP native request/result/event schemaがfixture化済み
-- reverse request全variantを確認
-- provider headers bridge設計が実証済み
-
-### Gate B: Adapter correct
-
-- unit/fake/conformance test pass
-- negative/failure path pass
-- no unsupported capability advertisement
-
-### Gate C: Runtime works
-
-- macOS development E2E pass
-- Linux x64 no-display E2E pass
-- auth/model/tool/cancel pass
-
-### Gate D: Safe distribution
-
-- real ACP wire harness pass
-- secret redaction/stdout isolation pass
-- SHA-256 checksumsとSPDX SBOM生成
-
-ZCode 3.3.6はmacOS arm64とLinux x64、ZCode 3.8.1 build 3.8.1.5310、ZCode 3.9.1 build 3.9.1.5853、およびZCode 3.9.2 build 3.9.2.6069はmacOS arm64でGate A-Dを通過済みです。加えてToad 0.6.20とacpx 0.12.0のbaseline接続を通過済みです。permission画面やcancel操作などclient固有UXの追加検証結果を、adapter capabilityへ混ぜません。
-
-## 10. Evidence record format
-
-互換性結果には次を残します。
-
-```yaml
-tested_at: 2026-07-19T00:00:00Z
-platform: linux-x64
-os_image: ubuntu-<version>
-zcode_app_version: 3.3.6
-zcode_build: 3.3.6.3198
-zcode_cli_version: 0.15.2
-zcode_cli_sha256: <sha256>
-zcode_acp_version: <version>
-acp_protocol: 1
-acp_schema: 1.19.0
-client: <name/version>
-scenarios:
-  initialize: pass
-  session_new: pass
-  prompt_stream: pass
-  permission: pass
-  cancel: pass
-  provider_headers: pass
-```
-
-secret、session transcript、credential pathはrecordへ含めません。
+- current artifact fingerprintが既知
+- adapterの意味変換testが通る
+- Linux CIの`bun run check`が通る
+- local ZCode runtimeの必須probeが通る
+- 5 target、checksums、SBOMが生成される
+- credential、prompt、provider headerがartifact/logへ混入しない

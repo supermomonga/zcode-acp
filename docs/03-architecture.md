@@ -75,7 +75,9 @@ flowchart TB
 
 - install rootを一意に解決
 - runtime executable、CLI entry、metadataの組を検証
-- app version/build、platform、`zcode.cjs version`のCLI version、metadata hashをsupport matrixと照合
+- metadata semanticsとprocess platformを照合
+- app versionと`zcode.cjs version`のCLI versionをcurrent manifestと照合
+- app buildとmetadata raw SHA-256は診断情報として保持
 - CLI SHA-256は公式artifactとの差分として診断するが、host互換性の選択条件にはしない
 - artifact固有descriptorからhost index/RPC moduleを解決し、install root内であること、SHA-256、必要な`g/i/j` exportを検証
 - 起動前の軽量doctor smoke
@@ -89,13 +91,13 @@ flowchart TB
 - 公式host workerとRPC channelを一connectionにつき一つ起動
 - Electron utility-processのMessagePort shapeをNode workerへ適合
 - service method allowlistとstrict result schema
-- artifact固有のservice channelと意味ベース操作をversion別contract adapterでnative RPCへ変換
+- protocol descriptorのservice channelと意味ベース操作をnative RPCへ変換
 - child stdout/stderrをACP stdoutから隔離
 - graceful shutdownとforce cleanup
 
 workspace keyは最低でもcanonical absolute cwdから導出します。symlink解決、大文字小文字、存在しないpathの扱いはplatformごとのテストで固定します。
 
-中立コアがbridgeへ渡す操作は`cancelGeneration`、`respondStructuredInput`、`respondPermission`です。3.3.6 adapterは`zcode-agent`上の`stopSession` / `respondUserInput` / response objectへ、3.8.1、3.9.1、および3.9.2 adapterは`zcode-task`上の`stopGeneration` / `respondElicitation` / option IDへ変換します。3.8.1、3.9.1、および3.9.2のnative `taskId`は公開session IDと同じopaque IDですが、parameter名の変換はadapter内だけで行います。
+中立コアがbridgeへ渡す操作は`cancelGeneration`、`respondStructuredInput`、`respondPermission`です。`zcode-task-v1` adapterは`zcode-task`上の`stopGeneration` / `respondElicitation` / `respondPermission`へ変換します。native `taskId`は公開session IDと同じopaque IDですが、parameter名の変換はadapter内だけで行います。
 
 ### 2.4 ZCode protocol client
 
@@ -188,7 +190,7 @@ dynamic subscriptionを`sendPrompt`より先に確立し、send直後のeventを
 
 ### 4.3 cancel
 
-ACP `session/cancel` はnotificationです。受信後は意味操作`cancelGeneration`を一度だけ送り、選択済みhost contractが対応するnative stop methodへ変換します。pending permission/user input callbackもcancelします。native eventが既にpipe上にある可能性があるため、終端eventまでは順序を保って処理し、その後prompt responseを `cancelled` で完了します。
+ACP `session/cancel` はnotificationです。受信後は意味操作`cancelGeneration`を一度だけ送り、選択済みhost protocolが対応するnative stop methodへ変換します。pending permission/user input callbackもcancelします。native eventが既にpipe上にある可能性があるため、終端eventまでは順序を保って処理し、その後prompt responseを `cancelled` で完了します。
 
 ### 4.4 shutdown
 

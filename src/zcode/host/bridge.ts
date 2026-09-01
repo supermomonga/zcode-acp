@@ -49,26 +49,13 @@ export class ZCodeHostBridge {
     runtime: DiscoveredRuntime,
     logger: Logger,
     environment: NodeJS.ProcessEnv = process.env,
-    options: { readonly allowDevelopmentCandidate?: boolean } = {},
   ): ZCodeHostBridge {
-    if (!options.allowDevelopmentCandidate) {
-      assertRuntimeSupported(runtime);
-    } else {
-      if (environment.ZCODE_ACP_ENABLE_CONTRACT_PROBE !== "1") {
-        throw new AdapterError(
-          "INVALID_CONFIGURATION",
-          "Development-candidate host contracts are restricted to explicit contract probes",
-        );
-      }
-      if (runtime.compatibility !== "development-candidate" && runtime.compatibility !== "supported") {
-        assertRuntimeSupported(runtime);
-      }
-    }
-    const host = runtime.hostContract;
+    assertRuntimeSupported(runtime);
+    const host = runtime.resolvedHost;
     if (host === undefined) {
       throw new AdapterError(
         "RUNTIME_DISCOVERY_FAILED",
-        "Supported ZCode artifact has no resolved host contract",
+        "Supported ZCode artifact has no resolved host artifact/protocol",
       );
     }
     const child = Bun.spawn(
@@ -80,7 +67,8 @@ export class ZCodeHostBridge {
           ELECTRON_RUN_AS_NODE: "1",
           ZCODE_ACP_HOST_INDEX: host.hostIndex,
           ZCODE_ACP_HOST_RPC_MODULE: host.hostRpcModule,
-          ZCODE_ACP_HOST_CONTRACT: JSON.stringify(host.descriptor),
+          ZCODE_ACP_HOST_ARTIFACT: JSON.stringify(host.artifact),
+          ZCODE_ACP_HOST_PROTOCOL: JSON.stringify(host.protocol),
         },
         stdin: "pipe",
         stdout: "pipe",
@@ -109,11 +97,11 @@ export class ZCodeHostBridge {
     resultSchema: Schema,
     timeoutMs = 30_000,
   ): Promise<z.output<Schema>> {
-    const contract = this.runtime.hostContract;
+    const contract = this.runtime.resolvedHost;
     if (contract === undefined) {
-      throw new AdapterError("RUNTIME_DISCOVERY_FAILED", "ZCode host contract is unavailable");
+      throw new AdapterError("RUNTIME_DISCOVERY_FAILED", "ZCode host artifact/protocol is unavailable");
     }
-    const adapted = adaptHostRequest(contract.descriptor, method, params);
+    const adapted = adaptHostRequest(contract.protocol, method, params);
     return this.client.request(
       "__call",
       { service: adapted.service, method: adapted.method, params: adapted.params },
