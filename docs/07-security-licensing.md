@@ -150,7 +150,7 @@ debug protocol traceを将来提供する場合、明示opt-in、保存先、ret
 ## 10. Supply-chain and compatibility
 
 - ZCodeは公式install artifactだけを利用
-- adapterはapp/build/platform、CLI version、metadata/host hashと公式CLI integrity hashをsupport matrixへ記録
+- adapterはcurrent app/CLI version、metadata semantics、host hash/exportと公式CLI integrity hashをmanifestへ記録
 - ACP SDKをexact versionでlock
 - dependency lockfileをcommit
 - release artifactにSBOM/checksumを提供

@@ -84,7 +84,7 @@ responseの概念shape（terminal auth capabilityなし）:
 }
 ```
 
-実際のresponseはpinned SDK/schemaで生成します。`loadSession`、list/resume/close、image/audio/embedded context、MCP、config/modesをadvertiseします。ZCode 3.3.6にnative surfaceがないadditional directoriesとdeleteはadvertiseしません。
+実際のresponseはpinned SDK/schemaで生成します。`loadSession`、list/resume/close、image/audio/embedded context、MCP、config/modesをadvertiseします。current host protocolにnative surfaceがないadditional directoriesはadvertiseしません。
 
 clientがterminal auth capabilityを出した場合だけ、adapter自身の`login` subcommandを起動するZCode OAuth methodを返します。logoutは公式ZCode CLIへ委譲します。
 
@@ -114,7 +114,7 @@ ACP v1のstable schemaに他のmethodが存在しても、実装・検証して�
 
 - `cwd` はabsolute path
 - pathが存在しdirectoryである
-- `additionalDirectories` はZCode 3.3.6 host未対応のため受け付けない
+- `additionalDirectories` はcurrent host protocol未対応のため受け付けない
 - stdio / HTTP / SSE MCP server listをnative create/resumeへ転送する
 
 ### Native sequence

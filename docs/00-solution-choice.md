@@ -53,7 +53,7 @@ UIとadapterを分離すると、次の保守範囲も分離できます。
 | Goose | Agent framework | ACP provider/server機能はあるが、custom agent統合はclient-independent adapterより重く、session制約も確認が必要 | primary harnessにしない |
 | Pool | Generic ACP client | 技術的には候補だが、all-rights-reserved/EULA条件を要確認 | open基盤として採用しない |
 | Pi + custom plugin | Pi-specific harness | Pi内のUXには適合するが、ACP Agentと汎用client要件を別途実装する必要がある | 不採用。将来ACP clientとして接続できるなら利用可能 |
-| ZCode built-in `tui` | ZCode CLI TUI | 3.3.6配布物では `@zcode/tui` が欠落し起動不能 | 不採用 |
+| ZCode built-in `tui` | ZCode CLI TUI | current desktop hostと同じprovider/credential経路をACPへ公開できない | 不採用 |
 
 ## 5. Recommended combination
 

@@ -1,5 +1,5 @@
 import { AdapterError } from "../../domain/errors.ts";
-import type { HostContractDescriptor, HostOperationDescriptor } from "../discovery/types.ts";
+import type { HostOperationDescriptor, HostProtocolDescriptor } from "../discovery/types.ts";
 
 export interface AdaptedHostRequest {
   readonly service: "agent" | "task";
@@ -8,15 +8,15 @@ export interface AdaptedHostRequest {
 }
 
 export function adaptHostRequest(
-  contract: HostContractDescriptor,
+  protocol: HostProtocolDescriptor,
   method: string,
   params: unknown,
 ): AdaptedHostRequest {
   if (method === "cancelGeneration") {
     return {
-      service: contract.operations.cancelGeneration.service,
-      method: contract.operations.cancelGeneration.method,
-      params: remapSession(requireRecord(params), contract.operations.cancelGeneration),
+      service: protocol.operations.cancelGeneration.service,
+      method: protocol.operations.cancelGeneration.method,
+      params: remapSession(requireRecord(params), protocol.operations.cancelGeneration),
     };
   }
 
@@ -24,27 +24,22 @@ export function adaptHostRequest(
     const input = requireRecord(params);
     const response = requireRecord(input.response);
     const { response: _response, ...base } = input;
-    const remapped = remapSession(base, contract.operations.respondStructuredInput);
+    const remapped = remapSession(base, protocol.operations.respondStructuredInput);
     return {
-      service: contract.operations.respondStructuredInput.service,
-      method: contract.operations.respondStructuredInput.method,
-      params: contract.operations.respondStructuredInput.responseShape === "nested"
-        ? { ...remapped, response }
-        : { ...remapped, ...response },
+      service: protocol.operations.respondStructuredInput.service,
+      method: protocol.operations.respondStructuredInput.method,
+      params: { ...remapped, ...response },
     };
   }
 
   if (method === "respondPermission") {
     const input = requireRecord(params);
-    const { optionId, response, ...base } = input;
-    const remapped = remapSession(base, contract.operations.respondPermission);
-    const answer = contract.operations.respondPermission.answerShape === "response"
-      ? { response: requireRecord(response) }
-      : { optionId: requireString(optionId, "permission optionId") };
+    const { optionId, response: _response, ...base } = input;
+    const remapped = remapSession(base, protocol.operations.respondPermission);
     return {
-      service: contract.operations.respondPermission.service,
-      method: contract.operations.respondPermission.method,
-      params: { ...remapped, ...answer },
+      service: protocol.operations.respondPermission.service,
+      method: protocol.operations.respondPermission.method,
+      params: { ...remapped, optionId: requireString(optionId, "permission optionId") },
     };
   }
 

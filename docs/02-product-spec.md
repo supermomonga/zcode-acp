@@ -6,7 +6,7 @@
 
 ## 2. 問題定義
 
-ZCodeのエージェント機能はデスクトップGUIから利用できる一方、GUIを持たないLinux環境や、ACP対応TUI/IDEから利用するための公開入口がありません。同梱CLIのTUIはZCode 3.3.6配布物では依存パッケージ欠落により起動しません。
+ZCodeのエージェント機能はデスクトップGUIから利用できる一方、GUIを持たないLinux環境や、ACP対応TUI/IDEから利用するための公開入口がありません。`zcode-acp`はインストール済みZCodeの公式host serviceをACP v1へ接続します。
 
 `zcode-acp`は、インストール済みZCodeの公式local host serviceをheadlessで起動し、そのservice contractを標準ACPへ変換することでこの問題を解決します。
 
@@ -109,13 +109,11 @@ zcode-acp version
 
 | Platform | MVP位置付け | 現在の根拠 |
 | --- | --- | --- |
-| Linux x64 | release target | 3.3.6-3198 `.deb`、displayなし実model/tool/permission/cancel pass |
-| macOS arm64 | release target | 3.3.6 build 3.3.6.3198、同E2E pass |
-| Linux arm64 | 次フェーズ | 公式配布はあるが、本調査で内容・実行を未確認 |
-| macOS x64 | 次フェーズ | 未確認 |
-| Windows | 非MVP | 未確認 |
+| Linux arm64/x64 | release target | ZCode 3.10.2 contract、headless運用 |
+| macOS arm64/x64 | release target | ZCode 3.10.2 contract |
+| Windows x64 | release target | ZCode 3.10.2 contract |
 
-「配布物が存在する」ことと「zcode-acpが対応済み」であることを区別し、compatibility matrixを通過した組だけをsupportedと表記します。
+全OSで同じcurrent artifact/protocolを使います。OS別に互換性versionを増やさず、install layoutとmetadata/process platform一致だけを分離して検証します。各OSでの実行確認とrelease binaryの生成確認は別のevidenceとして記録します。
 
 ## 8. 機能要件
 

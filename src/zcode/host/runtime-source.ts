@@ -48,9 +48,13 @@ import { createInterface } from "node:readline";
 
 const hostIndex = process.env.ZCODE_ACP_HOST_INDEX;
 const hostRpcModule = process.env.ZCODE_ACP_HOST_RPC_MODULE;
-const hostContractJson = process.env.ZCODE_ACP_HOST_CONTRACT;
-if (!hostIndex || !hostRpcModule || !hostContractJson) throw new Error("Missing ZCode host contract");
-const hostContract = JSON.parse(hostContractJson);
+const hostArtifactJson = process.env.ZCODE_ACP_HOST_ARTIFACT;
+const hostProtocolJson = process.env.ZCODE_ACP_HOST_PROTOCOL;
+if (!hostIndex || !hostRpcModule || !hostArtifactJson || !hostProtocolJson) {
+  throw new Error("Missing ZCode host artifact or protocol");
+}
+const hostArtifact = JSON.parse(hostArtifactJson);
+const hostProtocol = JSON.parse(hostProtocolJson);
 
 const workerSource = ${JSON.stringify(ZCODE_HOST_WORKER_SOURCE)};
 
@@ -64,15 +68,15 @@ worker.stderr.resume();
 
 const rpc = await import(pathToFileURL(hostRpcModule).href);
 const ports = new MessageChannel();
-const protocol = new rpc[hostContract.rpcExports.protocol](ports.port1);
-const client = new rpc[hostContract.rpcExports.client](protocol);
-const serviceFactory = rpc[hostContract.rpcExports.service];
-const services = new Map(Object.entries(hostContract.serviceChannels).map(([name, channel]) => [
+const protocol = new rpc[hostArtifact.rpcExports.protocol](ports.port1);
+const client = new rpc[hostArtifact.rpcExports.client](protocol);
+const serviceFactory = rpc[hostArtifact.rpcExports.service];
+const services = new Map(Object.entries(hostProtocol.serviceChannels).map(([name, channel]) => [
   name,
   serviceFactory.toService(client.getChannel(channel))
 ]));
 const agentService = services.get("agent");
-if (!agentService) throw new Error("ZCode host contract has no agent service");
+if (!agentService) throw new Error("ZCode host protocol has no agent service");
 const subscriptions = new Map();
 const commonAgentMethods = new Set([
   "initialize", "readWorkspaceState", "createSession", "resumeSession", "listSessions",
@@ -80,7 +84,7 @@ const commonAgentMethods = new Set([
   "closeSession", "setModel", "setThoughtLevel", "setMode", "getTaskTokenUsage",
   "respondProviderRuntimeHeaders", "disposeWorkspace"
 ]);
-const contractOperations = new Set(Object.values(hostContract.operations).map(operation =>
+const contractOperations = new Set(Object.values(hostProtocol.operations).map(operation =>
   operation.service + ":" + operation.method
 ));
 let shuttingDown = false;

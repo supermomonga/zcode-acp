@@ -1,8 +1,8 @@
 export interface BundleMetadata {
   readonly runtime: "electron-node";
-  readonly entry: string;
+  readonly entry: "zcode.cjs";
   readonly platform: string;
-  readonly source: string;
+  readonly source: "apps/zcode-cli/packages/cli/dist/zcode.cjs";
 }
 
 export interface RuntimePaths {
@@ -15,46 +15,49 @@ export interface RuntimePaths {
   readonly hostArchive: string;
 }
 
-export type HostContractId =
-  | "zcode-host-3.3.6"
-  | "zcode-host-3.8.1"
-  | "zcode-host-3.9.1"
-  | "zcode-host-3.9.2";
+export type HostArtifactId = "zcode-host-3.10.2";
+
+export type HostProtocolId = "zcode-task-v1";
 
 export interface HostOperationDescriptor {
   readonly method: string;
-  readonly service: "agent" | "task";
-  readonly sessionParameter: "sessionId" | "taskId";
+  readonly service: "task";
+  readonly sessionParameter: "taskId";
 }
 
-export interface HostContractDescriptor {
-  readonly id: HostContractId;
+export interface HostArtifactDescriptor {
+  readonly id: HostArtifactId;
+  readonly appVersion: string;
+  readonly cliVersion: string;
+  readonly cliSha256: string;
+  readonly protocolId: HostProtocolId;
   readonly hostIndexRelativePath: string;
   readonly hostRpcModuleRelativePath: string;
-  readonly hostIndexSha256?: string;
-  readonly hostRpcModuleSha256?: string;
+  readonly hostIndexSha256: string;
+  readonly hostRpcModuleSha256: string;
   readonly rpcExports: {
     readonly protocol: string;
     readonly client: string;
     readonly service: string;
   };
+}
+
+export interface HostProtocolDescriptor {
+  readonly id: HostProtocolId;
   readonly serviceChannels: {
     readonly agent: string;
-    readonly task?: string;
+    readonly task: string;
   };
   readonly operations: {
     readonly cancelGeneration: HostOperationDescriptor;
-    readonly respondStructuredInput: HostOperationDescriptor & {
-      readonly responseShape: "nested" | "flattened";
-    };
-    readonly respondPermission: HostOperationDescriptor & {
-      readonly answerShape: "response" | "optionId";
-    };
+    readonly respondStructuredInput: HostOperationDescriptor;
+    readonly respondPermission: HostOperationDescriptor;
   };
 }
 
-export interface ResolvedHostContract {
-  readonly descriptor: HostContractDescriptor;
+export interface ResolvedHost {
+  readonly artifact: HostArtifactDescriptor;
+  readonly protocol: HostProtocolDescriptor;
   readonly hostIndex: string;
   readonly hostRpcModule: string;
   readonly hostIndexSha256: string;
@@ -64,7 +67,6 @@ export interface ResolvedHostContract {
 
 export type CompatibilityStatus =
   | "supported"
-  | "development-candidate"
   | "unsupported";
 
 export interface RuntimeIdentity {
@@ -82,7 +84,7 @@ export interface DiscoveredRuntime {
   readonly identity: RuntimeIdentity;
   readonly expectedCliSha256?: string;
   readonly cliIntegrity?: "verified" | "modified";
-  readonly hostContract?: ResolvedHostContract;
+  readonly resolvedHost?: ResolvedHost;
   readonly compatibility: CompatibilityStatus;
   readonly compatibilityReason: string;
   readonly writableInstallRoot: boolean;

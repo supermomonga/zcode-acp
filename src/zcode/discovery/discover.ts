@@ -4,14 +4,15 @@ import { isAbsolute, join, relative, sep } from "node:path";
 import { z } from "zod";
 import { AdapterError } from "../../domain/errors.ts";
 import {
-  hostContractMismatch,
+  resolvedHostMismatch,
   resolveHostContractPaths,
 } from "./host-contract.ts";
 import { assessCompatibility } from "./manifest.ts";
 import type {
   BundleMetadata,
   DiscoveredRuntime,
-  HostContractDescriptor,
+  HostArtifactDescriptor,
+  HostProtocolDescriptor,
   RuntimeIdentity,
   RuntimePaths,
   RuntimeSmokeResult,
@@ -20,9 +21,9 @@ import type {
 const BundleMetadataSchema = z
   .object({
     runtime: z.literal("electron-node"),
-    entry: z.string().min(1),
+    entry: z.literal("zcode.cjs"),
     platform: z.string().min(1),
-    source: z.string().min(1),
+    source: z.literal("apps/zcode-cli/packages/cli/dist/zcode.cjs"),
   })
   .strict();
 
@@ -57,23 +58,18 @@ export async function discoverRuntime(
     );
   }
 
-  const paths = runtimePaths(installRoot, platform);
+  const paths = resolveRuntimePaths(installRoot, platform);
   await validatePaths(paths);
 
-  const bundle = BundleMetadataSchema.parse(await Bun.file(paths.metadata).json()) as BundleMetadata;
+  const detectedPlatform = `${platform}-${architecture}`;
+  const bundle = validateBundleMetadata(
+    await Bun.file(paths.metadata).json(),
+    detectedPlatform,
+  );
   if (bundle.entry !== paths.cliEntry.split(sep).at(-1)) {
     throw new AdapterError(
       "RUNTIME_DISCOVERY_FAILED",
       "Bundle entry does not match the resolved CLI entry",
-    );
-  }
-
-  const detectedPlatform = `${platform}-${architecture}`;
-  if (bundle.platform !== detectedPlatform) {
-    throw new AdapterError(
-      "UNSUPPORTED_PLATFORM",
-      "ZCode bundle platform does not match the current process",
-      { detectedPlatform, bundlePlatform: bundle.platform },
     );
   }
 
@@ -94,16 +90,17 @@ export async function discoverRuntime(
     bundle,
   };
   const assessment = assessCompatibility(identity);
-  const host = assessment.hostContract === undefined
+  const host = assessment.hostArtifact === undefined || assessment.hostProtocol === undefined
     ? undefined
     : await resolveHostContract(
         paths,
-        assessment.hostContract,
+        assessment.hostArtifact,
+        assessment.hostProtocol,
         options.environment ?? process.env,
       );
   const hostMismatch = host === undefined
     ? undefined
-    : hostContractMismatch(assessment.hostContract!, {
+    : resolvedHostMismatch(host.artifact, host.protocol, {
         hostIndexSha256: host.hostIndexSha256,
         hostRpcModuleSha256: host.hostRpcModuleSha256,
         exports: host.rpcExports,
@@ -117,7 +114,7 @@ export async function discoverRuntime(
       ? {}
       : { expectedCliSha256: assessment.expectedCliSha256 }),
     ...(assessment.cliIntegrity === undefined ? {} : { cliIntegrity: assessment.cliIntegrity }),
-    ...(host === undefined ? {} : { hostContract: host }),
+    ...(host === undefined ? {} : { resolvedHost: host }),
     compatibility: hostMismatch === undefined ? assessment.status : "unsupported",
     compatibilityReason: hostMismatch ?? assessment.reason,
     writableInstallRoot: (rootStat.mode & 0o022) !== 0,
@@ -161,9 +158,25 @@ export function assertRuntimeSupported(runtime: DiscoveredRuntime): void {
       appBuild: runtime.identity.appBuild,
       cliVersion: runtime.identity.cliVersion,
       compatibility: runtime.compatibility,
-      hostContract: runtime.hostContract?.descriptor.id,
+      hostArtifact: runtime.resolvedHost?.artifact.id,
+      hostProtocol: runtime.resolvedHost?.protocol.id,
     });
   }
+}
+
+export function validateBundleMetadata(
+  value: unknown,
+  detectedPlatform: string,
+): BundleMetadata {
+  const bundle = BundleMetadataSchema.parse(value) as BundleMetadata;
+  if (bundle.platform !== detectedPlatform) {
+    throw new AdapterError(
+      "UNSUPPORTED_PLATFORM",
+      "ZCode bundle platform does not match the current process",
+      { detectedPlatform, bundlePlatform: bundle.platform },
+    );
+  }
+  return bundle;
 }
 
 export async function runBundledCliInteractive(
@@ -195,7 +208,10 @@ function defaultInstallRoot(platform: NodeJS.Platform): string {
   }
 }
 
-function runtimePaths(installRoot: string, platform: NodeJS.Platform): RuntimePaths {
+export function resolveRuntimePaths(
+  installRoot: string,
+  platform: NodeJS.Platform,
+): RuntimePaths {
   if (platform === "darwin") {
     return {
       installRoot,
@@ -267,13 +283,14 @@ async function sha256(path: string): Promise<string> {
 
 async function resolveHostContract(
   paths: RuntimePaths,
-  descriptor: HostContractDescriptor,
+  artifact: HostArtifactDescriptor,
+  protocol: HostProtocolDescriptor,
   environment: NodeJS.ProcessEnv,
-): Promise<NonNullable<DiscoveredRuntime["hostContract"]>> {
+): Promise<NonNullable<DiscoveredRuntime["resolvedHost"]>> {
   const { hostIndex, hostRpcModule } = resolveHostContractPaths(
     paths.installRoot,
     paths.hostArchive,
-    descriptor,
+    artifact,
   );
 
   const script = String.raw`
@@ -307,8 +324,8 @@ const hash = path => crypto.createHash("sha256").update(fs.readFileSync(path)).d
   if (exitCode !== 0) {
     throw new AdapterError(
       "RUNTIME_DISCOVERY_FAILED",
-      "Failed to inspect the manifest-selected ZCode host contract",
-      { contract: descriptor.id, exitCode, stderr: stderr.slice(-1_000) },
+      "Failed to inspect the manifest-selected ZCode host artifact",
+      { artifact: artifact.id, protocol: protocol.id, exitCode, stderr: stderr.slice(-1_000) },
     );
   }
 
@@ -318,7 +335,8 @@ const hash = path => crypto.createHash("sha256").update(fs.readFileSync(path)).d
     exports: z.array(z.string()),
   }).strict().parse(JSON.parse(stdout));
   return {
-    descriptor,
+    artifact,
+    protocol,
     hostIndex,
     hostRpcModule,
     hostIndexSha256: inspection.hostIndexSha256,

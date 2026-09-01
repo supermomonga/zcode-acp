@@ -1,200 +1,78 @@
 # 調査結果
 
-## 1. 調査目的
+## 1. 調査対象
 
-次の二つが、ZCodeのGUIプロセスを起動せずに成立するかを確認しました。
+2026-09-01時点のZCode 3.10.2 / CLI 0.16.5を、現在サポートする唯一のreleaseとして調査しました。互換性契約は過去releaseへ累積せず、新releaseを採用するときに置換します。
 
-1. ヘッドレスLinux上でZCodeのエージェント機能を利用する
-2. その機能をACP Agentとして公開し、任意のACPクライアントから利用する
+## 2. 配布構造
 
-調査対象は2026-07-19時点のmacOS版ZCode 3.3.6と、公式Linux x64配布物3.3.6です。
+adapterが利用する要素は次の4種類です。
 
-## 2. 調査結果の要約
+- OSごとのElectron executableとinstall root
+- `Resources/glm/zcode.cjs`
+- `Resources/glm/.node-bundle-meta.json`
+- `Resources/app.asar/out/host`
 
-技術的には実現可能性が高いです。ZCode.appにはGUIホストが内部的に利用するCLIバンドルがあり、そのCLIは `app-server --stdio` を提供しています。GUIホスト自身もこのサーバーを子プロセスとして起動し、改行区切りJSONで通信しています。
+同一app versionの`zcode.cjs`とhost実装はOS間で同一と扱います。OS別installerを相互比較してmanifestを増やす設計にはしません。OS差はinstall layoutの解決と、metadata platformが実行中のprocess platformに一致することだけで検証します。
 
-ただし、このサーバーはACPを直接話しません。JSON-RPCに似たZCode独自RPCであり、GUIホストが担っている逆方向リクエストも存在します。このため、単なるプロセス起動ラッパーではなく、状態・権限・イベントを意味的に変換するアダプターが必要です。
+## 3. metadata contract
 
-## 3. macOS版の実機確認
-
-### 3.1 バージョンと配置
-
-| 項目 | 値 |
-| --- | --- |
-| アプリ | `/Applications/ZCode.app` |
-| `CFBundleShortVersionString` | `3.3.6` |
-| `CFBundleVersion` | `3.3.6.3198` |
-| CLI | `/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs` |
-| CLI version | `0.15.2` |
-| bundle runtime | `electron-node` |
-| bundle platform | `darwin-arm64` |
-
-`.node-bundle-meta.json` の内容は次の通りです。
+metadataは次の意味値を必須とします。
 
 ```json
 {
   "runtime": "electron-node",
   "entry": "zcode.cjs",
-  "platform": "darwin-arm64",
-  "source": "apps/zcode-cli/packages/cli/dist/zcode.cjs"
+  "source": "apps/zcode-cli/packages/cli/dist/zcode.cjs",
+  "platform": "darwin-arm64"
 }
 ```
 
-### 3.2 正しい起動方法
+`platform`は例であり、現在のOSとarchitectureから得た値との完全一致が必要です。raw metadata SHA-256はdiagnosticに残しますが、JSONのfield順序や整形差分を互換性違反にはしません。
 
-GUIホストの実装は、Electron実行ファイルをNode互換モードにしてCLIを起動します。macOS 3.3.6で確認した等価コマンドは次です。
+## 4. 正しい起動境界
 
-```bash
-ELECTRON_RUN_AS_NODE=1 \
-  "/Applications/ZCode.app/Contents/Frameworks/ZCode Helper.app/Contents/MacOS/ZCode Helper" \
-  "/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs" \
-  app-server --stdio
-```
+公式GUI hostは同梱Electron executableをNode互換modeで動かし、`app.asar/out/host/index.js`をworkerとして起動します。この経路はZCodeのprovider registry、credential、runtime header処理を利用します。
 
-この方法ではElectronのGUI初期化を行わず、stdioサーバーとして動作します。`zcode-acp` はこの構造を踏襲し、システムの `node` を暗黙の代替ランタイムとして使ってはいけません。同梱CLIが要求するNode/Electron APIとの一致を保証できないためです。
+`zcode.cjs app-server --stdio`の直接起動はprovider registryを受け取れないため、実モデルを使うadapterの起動境界には採用しません。system Nodeへのfallbackも行いません。
 
-### 3.3 CLIで確認できた機能
+## 5. Host artifact
 
-CLI 0.15.2は次のコマンドを表示します。
+ZCode 3.10.2の現在値は次のとおりです。
 
-- `app-server`: ZCode Protocol stdio server
-- `commands`
-- `doctor`
-- `login` / `logout`
-- `plugins`
-- `skills`
-- `tui`
-- `version`
-- `--prompt` / `--print` によるone-shot実行
+| Field | Value |
+| --- | --- |
+| Artifact ID | `zcode-host-3.10.2` |
+| Host index | `out/host/index.js` |
+| Host index SHA-256 | `72e57751ed5563338335a52cd688c7fba0707ef72d8ce782356b1f0b39c77462` |
+| RPC module | `out/host/chunk-KGXW6KHC.js` |
+| RPC module SHA-256 | `e66203598b60d8728260ad7631f295f9d6deb8276b06e8f0cab8776773c75b31` |
+| Required exports | `g`、`i`、`j` |
 
-`doctor --json` は同梱ランタイムで正常に起動し、Node 24.14.0、CLI 0.15.2、process title `zcode-cli` を報告しました。
+host index、RPC module、required exportsのいずれかが異なる場合は起動前に拒否します。
 
-### 3.4 内蔵TUIは配布物で壊れている
+## 6. Host protocol
 
-`tui` コマンドを実行すると、次のエラーで終了しました。
+現在のprotocol IDは`zcode-task-v1`です。common操作は`zcode-agent`、task interactionは`zcode-task`を使います。
 
-```text
-Error: Cannot find package '@zcode/tui' imported from .../zcode.cjs
-```
+| Semantic operation | Native operation |
+| --- | --- |
+| cancel | `stopGeneration({taskId})` |
+| structured input | `respondElicitation({taskId, requestId, action, content})` |
+| permission | `respondPermission({taskId, requestId, optionId})` |
 
-macOSアプリ内にもLinux `.deb` 内にも `@zcode/tui` は含まれていません。したがって「既存のZCode TUIをそのまま利用する」案は、3.3.6配布物では成立しません。これはTUIを自作する根拠ではなく、ACP境界を実装して汎用ACPクライアントを利用する根拠です。
+permissionの旧response object形式や、structured inputのnested response形式は扱いません。
 
-### 3.5 one-shotはACPバックエンドに不向き
+## 7. Compatibility policy
 
-`--prompt --json` は最終JSONを返すだけで、調査した経路ではツール呼び出しや出力を逐次配信するプロトコルになっていません。また、modeを省略すると `yolo` が既定になるとhelpに明記されています。
+- app versionは`3.10.2`だけを許可
+- CLI versionは`0.16.5`だけを許可
+- CLI SHA-256一致は`verified`、差分は`modified`
+- CLIが`modified`でもhost artifact一致時は起動可能
+- app buildとmetadata raw SHA-256は診断のみ
+- metadata semantic field、process platform、host hash/exportの差分は拒否
+- 未知OSはinstall layout解決時に拒否
 
-一方、`app-server --stdio` はセッション、購読、停止、権限要求を持つため、ACP変換にはこちらが適しています。one-shotをバックエンドのフォールバックにしてはいけません。
+## 8. 残る検証範囲
 
-### 3.6 helpと実パーサーの不一致
-
-helpに表示される一部のフラグは、無害な呼び出しで実際にはunknown optionとして拒否されました。確認した例は次です。
-
-- `--max-turns`
-- `--allowed-tools`
-- `--settings`
-- `--permission-mode`
-
-private CLIのhelpだけを互換性契約として扱えないことを示しています。`zcode-acp` はアプリ版、CLI版、実際のRPC能力を組み合わせて対応可否を判定する必要があります。
-
-## 4. GUIホスト実装から分かったこと
-
-### 4.1 子プロセスの起動
-
-ZCodeデスクトップホストは、配布環境では概ね次の条件でサーバーを起動します。
-
-- command: `process.execPath`
-- args: `[zcode.cjs, "app-server", "--stdio"]`
-- env patch: `ELECTRON_RUN_AS_NODE=1`
-- cwd: 対象workspace path
-
-開発用の環境変数や別バイナリ探索経路も実装されていますが、外部アダプターがそれらを互換性フォールバックとして模倣する必要はありません。公式インストール先と明示指定先だけを解決する方が安全です。
-
-### 4.2 プロセス管理
-
-デスクトップホストには `ZCodeAgentProcessManager` があり、正規化したworkspace keyごとに一つの子プロセスを管理します。起動中Promiseの共有、再起動世代、終了処理もworkspace単位です。
-
-`zcode-acp` も同じ境界を採用します。異なるworkspaceを同一子プロセスへ混在させません。
-
-### 4.3 stdio framing
-
-GUIホストの `ZCodeStdioTransport` は次のルールです。
-
-- UTF-8
-- 1行につき1 JSON object
-- 送信時は `JSON.stringify(message) + "\n"`
-- CRLFの末尾 `\r` を除去
-- 空行は無視
-- stdoutのJSON parseまたはschema parse失敗でtransportを閉じる
-- stderrは行単位の診断ログ
-
-ACPのstdioも改行区切りJSONですが、外側はJSON-RPC 2.0、内側はZCode独自envelopeです。同じストリームへ混ぜてはいけません。
-
-### 4.4 ZCode Protocol client
-
-GUIホストのクライアント実装から、次を確認しました。
-
-- request: `{ id, method, params, trace? }`
-- notification: `{ method, params }`
-- success response: `{ id, result }`
-- error response: `{ id, error }`
-- serverからclientへのrequest: `{ id, method, params }`
-- request IDは1から増加する数値
-- default request timeoutは30,000ms
-- `jsonrpc: "2.0"` フィールドは付けない
-
-この契約はJSON-RPC風ですがACPではありません。
-
-## 5. Linux配布物の確認
-
-公式3.3.6 linux-x64 `.deb` を展開し、次の配置を確認しました。
-
-```text
-/opt/ZCode/zcode
-/opt/ZCode/resources/glm/zcode.cjs
-/opt/ZCode/resources/glm/.node-bundle-meta.json
-```
-
-metadataは `runtime: electron-node`、`entry: zcode.cjs`、`platform: linux-x64` です。想定起動形は次です。
-
-```bash
-ELECTRON_RUN_AS_NODE=1 \
-  /opt/ZCode/zcode \
-  /opt/ZCode/resources/glm/zcode.cjs \
-  app-server --stdio
-```
-
-その後、production実装は直接app-serverではなく公式desktop host serviceを使用する構成へ確定しました。Linux上では公式`.deb`、displayなし、実provider/model/tool/permission/cancelまで実行済みです。
-
-## 6. 認証とユーザー状態
-
-ZCodeは `~/.zcode` 以下にcredential、config、database、logsなどのユーザー状態を持ちます。調査ではキー構造だけを確認し、credential値は読み出していません。
-
-CLIは`login --no-browser`をhelpに表示します。検証時点のendpoint responseはinvalid JSONで、OAuth自体の完走は確認できませんでした。一方、既存stateを公式`ZCODE_CREDENTIAL_SECRET`で復号可能にしたLinux testではprovider/model E2Eを完走しています。`zcode-acp`自身はcredentialをコピー・変換・表示しません。
-
-## 7. 重大な逆方向リクエスト
-
-ZCode app-serverからclientへ、少なくとも次のrequestが送られます。
-
-- `interaction/requestPermission`
-- `interaction/requestUserInput`
-- `interaction/requestProviderRuntimeHeaders`
-
-前二つはGUIでユーザーに提示される操作です。最後のものは、Z.AI Start PlanまたはBigModel Start/Coding Plan系プロバイダーで、モデルリクエスト直前にruntime headersを更新するために使われます。GUIホストはprovider registryからruntime modelを再構築・適用した後に `headersApplied` を返しています。
-
-したがって、次は不正な実装です。
-
-- 常に許可を返す
-- user inputを空文字で返す
-- headersを適用せず `headersApplied: true` を返す
-
-これらは一見動作しても、安全性や特定providerの認証を破壊します。
-
-## 8. 残る非MVP検証範囲
-
-- `login --no-browser`のOAuth新規完走
-- structured user inputを標準化できる将来ACP contract
-- persisted session resume/load
-- Linux arm64、macOS x64、Windows
-- Toad/acpxのpermission画面・cancel操作など高度なclient固有UX（baseline接続は検証済み）
-
-MVP event、permission、tool、terminal variantは実host traceからschema化済みです。
+artifact/protocolの互換性契約と、各OSでの実運用検証は別に記録します。macOS上の現在releaseでhost lifecycleとbuildを検証し、Linux/Windows向けbinaryはLinux runnerからcross compileします。高価なmacOS/Windows GitHub-hosted runnerは使いません。
