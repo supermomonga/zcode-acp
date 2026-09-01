@@ -82,6 +82,10 @@ release前に現在のmacOS ZCode 3.10.2で次を実行します。既存credent
 
 Release workflowもUbuntuだけを使い、公開前の`bun run check`を必須にします。成果物はmacOS arm64/x64、Linux arm64/x64、Windows x64の5 targetです。
 
+`ZCode Release Check` workflowは毎日00:17 UTC（日本時間09:17）と手動実行時にChangelogを確認します。`CURRENT_ZCODE_ARTIFACT.appVersion`より新しい各versionについて、英語のrelease noteを転記した追従Issueを1件ずつ作成します。open/closedを問わず同じversionのIssueが存在する場合は再作成しません。
+
+このIssueは新版の公開を知らせるものであり、互換性を保証するものではありません。対応時は以下の手順で実artifactとprotocolを検証します。
+
 ## 6. New ZCode release procedure
 
 1. 最新app/CLI versionを確認
