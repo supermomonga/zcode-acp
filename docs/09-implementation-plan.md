@@ -36,17 +36,7 @@ manifestは常に最新ZCode 1 versionだけを持ちます。現在値はZCode 
 
 native APIに存在しない機能をprivate storage編集や成功応答の偽装で補いません。
 
-## 4. Paseo implementation
-
-OpenCode SDK互換facadeはZCodeの同じsession coordinatorを使います。
-
-- loopback bindのみ
-- stdout readiness lineを維持
-- model/session/event/tool/configを意味変換
-- native permission optionを固定allow/rejectへ潰さない
-- unsupported OpenCode操作は明示的に失敗
-
-## 5. Verification workflow
+## 4. Verification workflow
 
 ```bash
 bun install --frozen-lockfile
@@ -56,9 +46,9 @@ bun run build
 bun run release
 ```
 
-続けてprobe用一時workspaceでhost lifecycle、実model/tool、permission、structured input、cancel/history、ACP wire、Paseo facadeを検証します。外部modelへ送信される可能性があるprobeは送信範囲を限定して承認を得ます。
+続けてprobe用一時workspaceでhost lifecycle、実model/tool、permission、structured input、cancel/history、ACP wireを検証します。外部modelへ送信される可能性があるprobeは送信範囲を限定して承認を得ます。
 
-## 6. CI and release
+## 5. CI and release
 
 通常CIとReleaseはGitHub ActionsのLinux runnerだけで実行します。Bun 1.3.13を固定し、frozen install後に`bun run check`を通します。
 
@@ -70,7 +60,7 @@ Linux runnerから次の5 targetをcross compileします。
 - Linux x64
 - Windows x64
 
-## 7. Updating ZCode
+## 6. Updating ZCode
 
 新release対応は追加ではなく置換です。
 
@@ -82,7 +72,7 @@ Linux runnerから次の5 targetをcross compileします。
 
 後方互換性は明示要求がない限り実装しません。
 
-## 8. Definition of done
+## 7. Definition of done
 
 - current versionだけがsupportedになる
 - 3 OS identityが同じartifact/protocolへ解決される

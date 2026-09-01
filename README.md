@@ -1,6 +1,6 @@
 # zcode-acp | Unofficial ZCode ACP Agent
 
-`zcode-acp` is a TypeScript/Bun adapter that exposes an installed ZCode runtime as an ACP v1 stdio agent or as an OpenCode-compatible server for Paseo. It launches ZCode's desktop host service headlessly without copying ZCode credentials or model-provider configuration.
+`zcode-acp` is a TypeScript/Bun adapter that exposes an installed ZCode runtime as an ACP v1 stdio agent. It launches ZCode's desktop host service headlessly without copying ZCode credentials or model-provider configuration.
 
 > [!NOTE]
 > This project is an unofficial tool and is not officially released, endorsed, or maintained by ZCode or Z.ai.
@@ -24,7 +24,6 @@
 - Use of ZCode's provider registry, credentials, and runtime-header path
 - Single-file executables for macOS arm64/x64, Linux arm64/x64, and Windows x64
 - Fail-closed host compatibility checks with separate CLI integrity reporting
-- Paseo integration through an OpenCode SDK 1.14.46-compatible HTTP/SSE facade
 
 `additionalDirectories` is not advertised because the current ZCode host does not provide the required API. `session/list` requires a working directory to match the ZCode host protocol and returns invalid params when it is omitted. If structured input is required but the ACP client does not support form elicitation, the adapter declines the native request and explicitly stops the turn.
 
@@ -64,40 +63,9 @@ Run the Version Bump workflow to create a `release/vX.Y.Z` pull request. Merging
 ./dist/zcode-acp login
 ./dist/zcode-acp logout
 ./dist/zcode-acp
-./dist/zcode-acp paseo --version
-./dist/zcode-acp paseo auth list
-./dist/zcode-acp paseo serve --port 4096
 ```
 
 Without a subcommand, stdout is reserved for ACP JSON-RPC frames and diagnostics are written to stderr. Use `--zcode-install /absolute/path` or `ZCODE_ACP_ZCODE_INSTALL` to select a non-standard installation directory.
-
-## Paseo
-
-Paseo can launch the same headless ZCode runtime without changing Paseo itself. Override Paseo's built-in `opencode` provider in `~/.paseo/config.json`:
-
-```json
-{
-  "version": 1,
-  "agents": {
-    "providers": {
-      "opencode": {
-        "label": "ZCode(opencode)",
-        "description": "ZCode",
-        "command": ["/absolute/path/to/zcode-acp", "paseo"],
-        "enabled": true
-      }
-    }
-  }
-}
-```
-
-Do not configure ZCode as a separate provider with `extends: "opencode"`. Paseo uses one shared OpenCode server manager, so catalog and session operations from both entries would target whichever command initialized it first. The built-in OpenCode provider and ZCode therefore cannot be used at the same time; the configuration above replaces OpenCode with ZCode while it is enabled.
-
-Paseo appends `serve --port <allocated-port>` to this command. The facade binds only to `127.0.0.1`; stdout contains the required `listening on` readiness line and diagnostics remain on stderr.
-
-The facade maps ZCode models, thought levels, modes, session history, streaming, tools, MCP configuration, structured questions, permissions, and cancellation into Paseo's existing OpenCode provider UI. Native permission choices are intentionally rendered as questions so arbitrary ZCode options are not collapsed into OpenCode's fixed allow/reject set. Consequently, Paseo's inherited OpenCode **Auto Accept** toggle does not approve ZCode permissions; select ZCode's `yolo` mode explicitly if automatic native approval is intended.
-
-The compatibility target is Paseo commit `c60fa098a` with `@opencode-ai/sdk` 1.14.46. Unsupported OpenCode-only operations such as rewind, archive, and subagent creation fail explicitly or return an empty child list; the facade never reports fabricated success.
 
 ## ACP clients
 

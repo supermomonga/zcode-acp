@@ -7,11 +7,6 @@ import { serveAcpStdio } from "./acp/v1/server.ts";
 import { parseArguments } from "./cli/arguments.ts";
 import { createDoctorReport } from "./cli/doctor-report.ts";
 import {
-  createPaseoEngine,
-  PASEO_OPENCODE_SDK_VERSION,
-  startPaseoOpenCodeServer,
-} from "./paseo/opencode/server.ts";
-import {
   discoverRuntime,
   runBundledCliInteractive,
   runRuntimeSmoke,
@@ -28,37 +23,6 @@ async function main(argv: readonly string[]): Promise<number> {
   if (args.command === "agent") {
     const logger = new StderrLogger(process.env.ZCODE_ACP_LOG_LEVEL === "debug" ? "debug" : "info");
     await serveAcpStdio(HeadlessZCodeSessionService.create(logger, discoveryOptions), logger);
-    return 0;
-  }
-
-  if (args.command === "paseo-version") {
-    process.stdout.write(
-      `zcode-acp paseo ${ZCODE_ACP_VERSION} (OpenCode SDK ${PASEO_OPENCODE_SDK_VERSION})\n`,
-    );
-    return 0;
-  }
-
-  if (args.command === "paseo-auth-list") {
-    const runtime = await discoverRuntime(discoveryOptions);
-    const smoke = await runRuntimeSmoke(runtime);
-    if (!smoke.passed || smoke.authentication !== "present") {
-      process.stdout.write("ZCode: unauthenticated (run zcode-acp login)\n");
-      return 1;
-    }
-    process.stdout.write("ZCode: authenticated\n");
-    return 0;
-  }
-
-  if (args.command === "paseo-serve") {
-    const logger = new StderrLogger(process.env.ZCODE_ACP_LOG_LEVEL === "debug" ? "debug" : "info");
-    const server = startPaseoOpenCodeServer({
-      port: args.port!,
-      logger,
-      engine: createPaseoEngine(logger, discoveryOptions),
-    });
-    process.stdout.write(`listening on http://127.0.0.1:${server.port}\n`);
-    await waitForShutdownSignal();
-    await server.stop();
     return 0;
   }
 
@@ -110,18 +74,6 @@ async function main(argv: readonly string[]): Promise<number> {
     }
   }
   return smoke.passed ? 0 : 1;
-}
-
-async function waitForShutdownSignal(): Promise<void> {
-  await new Promise<void>((resolve) => {
-    const done = () => {
-      process.off("SIGINT", done);
-      process.off("SIGTERM", done);
-      resolve();
-    };
-    process.once("SIGINT", done);
-    process.once("SIGTERM", done);
-  });
 }
 
 try {
