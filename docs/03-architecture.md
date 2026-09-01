@@ -2,7 +2,7 @@
 
 ## 1. 設計原則
 
-`zcode-acp` はprotocol proxyではなく、異なる状態機械を接続するadapterです。外側のACP JSON-RPCまたはPaseo向けOpenCode HTTP/SSE envelopeを内側へ付け替えるだけでは、prompt完了、permission、cancel、session replayの意味が一致しません。
+`zcode-acp` はprotocol proxyではなく、異なる状態機械を接続するadapterです。外側のACP JSON-RPCを内側のZCode private RPC envelopeへ付け替えるだけでは、prompt完了、permission、cancel、session replayの意味が一致しません。
 
 設計では次を優先します。
 
@@ -19,12 +19,10 @@
 flowchart TB
     subgraph ClientSide["Client processes"]
       Client["Generic ACP Client"]
-      PaseoClient["Paseo"]
     end
 
     subgraph Adapter["zcode-acp process"]
       Acp["ACP v1 server"]
-      Paseo["Paseo OpenCode facade<br/>HTTP + SSE"]
       Session["Protocol-neutral session coordinator"]
       Mapper["Event / error / permission mapper"]
       PM["Official host bridge"]
@@ -38,9 +36,7 @@ flowchart TB
     end
 
     Client <-->|"ACP v1 over stdio"| Acp
-    PaseoClient <-->|"OpenCode HTTP + SSE"| Paseo
     Acp <--> Session
-    Paseo <--> Session
     Session <--> Mapper
     Session <--> PM
     Discovery --> PM
@@ -58,16 +54,6 @@ flowchart TB
 - ACP request/notificationのschema validation
 - client callback requestの相関
 - stdoutへACP frameだけを直列化
-
-### 2.1.1 Paseo OpenCode facade
-
-責務:
-
-- Paseoが固定するOpenCode SDK 1.14.46のHTTP routeとglobal SSE eventを提供
-- model / thought level / modeをprovider / variant / primary agentへ変換
-- native structured inputとpermission optionを`question.asked`へlosslessに変換
-- `127.0.0.1`だけにbindし、stdout readiness lineとstderr diagnosticsを分離
-- ZCodeに意味保存して写像できないrewind/archiveを明示的に拒否
 
 ### 2.2 Runtime discovery and compatibility gate
 
@@ -275,11 +261,10 @@ adapterは常に `sessionId -> workspaceKey` bindingを保持し、別cwdから�
 
 ```text
 cli
- ├─ acp-server ────────┐
- └─ paseo-http-server ─┴─ session-coordinator
-                          └─ zcode-runtime
-                              ├─ zcode-protocol
-                              └─ runtime-discovery
+ └─ acp-server ── session-coordinator
+                    └─ zcode-runtime
+                        ├─ zcode-protocol
+                        └─ runtime-discovery
 ```
 
 `zcode-protocol` はACP型へ依存させず、`acp-server` はZCode bundle pathを直接扱いません。private protocol更新とACP更新を別々にテストできる境界にします。

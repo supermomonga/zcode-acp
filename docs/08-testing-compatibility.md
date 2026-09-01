@@ -65,7 +65,7 @@ release前に現在のmacOS ZCode 3.10.2で次を実行します。既存credent
 8. permission allow/deny
 9. structured input
 10. cancel、history resume/delete
-11. ACP wireとPaseo facade
+11. ACP wire
 
 実モデルを使う項目はworkspace dataがproviderへ送信され得るため、probe用一時directoryだけを対象にし、実行環境の承認を得て行います。
 
