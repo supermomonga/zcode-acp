@@ -1,5 +1,7 @@
 # 調査結果
 
+この文書は現在のZCode配布物から観測した事実を記録します。起動方式の選定は[ADR 0003](adr/0003-zcodegong-shi-hosutosabisuwotong-kun-electronrantaimudeqi-dong-suru.md)、互換性方針は[ADR 0005](adr/0005-zui-xin-nojian-zheng-ji-mizcode-1baziyondakewoyan-mi-nisapotosuru.md)、build方針は[ADR 0008](adr/0008-linuxshang-dequan-puratutohuomuxiang-keadaputanomiwobirudosuru.md)を参照してください。
+
 ## 1. 調査対象
 
 2026-09-01時点のZCode 3.10.2 / CLI 0.16.5を、現在サポートする唯一のreleaseとして調査しました。互換性契約は過去releaseへ累積せず、新releaseを採用するときに置換します。
@@ -30,11 +32,11 @@ metadataは次の意味値を必須とします。
 
 `platform`は例であり、現在のOSとarchitectureから得た値との完全一致が必要です。raw metadata SHA-256はdiagnosticに残しますが、JSONのfield順序や整形差分を互換性違反にはしません。
 
-## 4. 正しい起動境界
+## 4. 観測した起動経路
 
-公式GUI hostは同梱Electron executableをNode互換modeで動かし、`app.asar/out/host/index.js`をworkerとして起動します。この経路はZCodeのprovider registry、credential、runtime header処理を利用します。
+公式GUI hostは同梱Electron executableをNode互換modeで動かし、`app.asar/out/host/index.js`をworkerとして起動します。この経路ではZCodeのprovider registry、credential、runtime header処理を利用できます。
 
-`zcode.cjs app-server --stdio`の直接起動はprovider registryを受け取れないため、実モデルを使うadapterの起動境界には採用しません。system Nodeへのfallbackも行いません。
+`zcode.cjs app-server --stdio`を直接起動した実測ではprovider registryを受け取れず、実モデル利用に必要なproviderが0件になりました。この証拠に基づく起動方式はADR 0003で確定しています。
 
 ## 5. Host artifact
 
@@ -63,7 +65,7 @@ host index、RPC module、required exportsのいずれかが異なる場合は�
 
 permissionの旧response object形式や、structured inputのnested response形式は扱いません。
 
-## 7. Compatibility policy
+## 7. 現在のcompatibility判定
 
 - app versionは`3.10.2`だけを許可
 - CLI versionは`0.16.5`だけを許可
@@ -73,6 +75,8 @@ permissionの旧response object形式や、structured inputのnested response形
 - metadata semantic field、process platform、host hash/exportの差分は拒否
 - 未知OSはinstall layout解決時に拒否
 
+これらを最新の検証済み1バージョンだけへ適用し、過去releaseを累積しない理由はADR 0005に記録しています。
+
 ## 8. 残る検証範囲
 
-artifact/protocolの互換性契約と、各OSでの実運用検証は別に記録します。macOS上の現在releaseでhost lifecycleとbuildを検証し、Linux/Windows向けbinaryはLinux runnerからcross compileします。高価なmacOS/Windows GitHub-hosted runnerは使いません。
+artifact/protocolの互換性契約と、各OSでの実運用検証は別に記録します。macOS上の現在releaseでhost lifecycleとbuildを検証し、Linux/Windows向けbinaryはLinux runnerからcross compileします。現在の検証結果は[Implementation status](10-implementation-status.md)に記録します。

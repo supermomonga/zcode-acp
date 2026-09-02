@@ -1,5 +1,7 @@
 # アーキテクチャ
 
+起動runtimeは[ADR 0003](adr/0003-zcodegong-shi-hosutosabisuwotong-kun-electronrantaimudeqi-dong-suru.md)、状態管理は[ADR 0004](adr/0004-zhuang-tai-wochi-tupurotokorubian-huan-tositeacptozcodewojie-sok-suru.md)、互換性境界は[ADR 0005](adr/0005-zui-xin-nojian-zheng-ji-mizcode-1baziyondakewoyan-mi-nisapotosuru.md)、ACP versionは[ADR 0006](adr/0006-acp-v1qi-yue-wogu-ding-si-jiang-lai-nopurotokoruban-wofen-li-suru.md)に記録しています。この文書はそれらの判断を実装するcomponent、状態遷移、data flowを示します。
+
 ## 1. 設計原則
 
 `zcode-acp` はprotocol proxyではなく、異なる状態機械を接続するadapterです。外側のACP JSON-RPCを内側のZCode private RPC envelopeへ付け替えるだけでは、prompt完了、permission、cancel、session replayの意味が一致しません。
@@ -218,7 +220,7 @@ idle -> subscribing -> sending -> running -> completing -> idle
                                   +-> awaiting_user_input
 ```
 
-同一sessionにつきactive promptは一つです。second promptをqueueするかrejectするかは、MVPではrejectを選びます。暗黙queueはclientのcancel/ordering期待を曖昧にするためです。
+同一sessionにつきactive promptは一つです。second promptはqueueせずrejectします。暗黙queueはclientのcancel/ordering期待を曖昧にするためです。
 
 ## 6. Session identity
 
@@ -271,7 +273,7 @@ cli
 
 ## 10. 参照実装の使い方
 
-`agentclientprotocol/codex-acp` は、外部app-serverをACPへ変換するTypeScript実装として構造上の参考になります。特に次の分離は参考にできます。
+製品を特定clientから分離する理由は[ADR 0002](adr/0002-acpadaputawokuraiantofei-yi-cun-tosi-uiwowai-bu-kuraiantoniwei-neru.md)に記録しています。`agentclientprotocol/codex-acp` は、外部app-serverをACPへ変換するTypeScript実装として構造上の参考にしました。特に次の分離を参照しています。
 
 - app-server client
 - ACP session connection

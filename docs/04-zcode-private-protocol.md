@@ -1,10 +1,12 @@
 # ZCode private host protocol
 
+この文書は現在のversion固有contractを記録します。hostの起動方式は[ADR 0003](adr/0003-zcodegong-shi-hosutosabisuwotong-kun-electronrantaimudeqi-dong-suru.md)、互換性方針は[ADR 0005](adr/0005-zui-xin-nojian-zheng-ji-mizcode-1baziyondakewoyan-mi-nisapotosuru.md)、interaction境界は[ADR 0007](adr/0007-neiteibunoquan-xian-ru-li-zi-ge-qing-bao-nojing-jie-wobao-chi-suru.md)を参照してください。
+
 ## 1. Scope
 
 対象はZCode 3.10.2 / CLI 0.16.5の`app.asar/out/host`に含まれる公式local host serviceです。これは公開APIではないため、現在のmanifestが示すartifact fingerprintと完全一致する場合だけ起動します。
 
-`zcode.cjs app-server --stdio`の直接protocolはdesktopのmodel-provider registryを持たないため、production経路には採用しません。
+`zcode.cjs app-server --stdio`の直接protocolではdesktopのmodel-provider registryを利用できないことが実測されています。production経路の選定理由はADR 0003に記録しています。
 
 ## 2. Artifactとprotocolの分離
 
@@ -26,7 +28,7 @@
 - structured input: `respondElicitation({taskId, requestId, action, content})`
 - permission: `respondPermission({taskId, requestId, optionId})`
 
-artifactの更新とprotocol意味論の更新を別の判断として扱います。artifactからprotocol IDへの参照が一致しない場合も起動しません。
+artifactの更新とprotocol意味論の更新を別々のdescriptorで表します。artifactからprotocol IDへの参照が一致しない場合も起動しません。
 
 ## 3. Launch and bridge
 

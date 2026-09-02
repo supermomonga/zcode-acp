@@ -1,5 +1,7 @@
 # Testing and compatibility
 
+単一versionの互換性方針は[ADR 0005](adr/0005-zui-xin-nojian-zheng-ji-mizcode-1baziyondakewoyan-mi-nisapotosuru.md)、Linux-only CIとrelease artifactの範囲は[ADR 0008](adr/0008-linuxshang-dequan-puratutohuomuxiang-keadaputanomiwobirudosuru.md)を参照してください。この文書は現在のcontract、test、実機probe、更新手順を記録します。
+
 ## 1. 方針
 
 現在のmanifestはZCode 3.10.2 / CLI 0.16.5だけを表し、新versionを採用するときはこのentryとfixturesを置換します。過去versionのentryは残しません。

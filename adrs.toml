@@ -1,0 +1,14 @@
+adr_dir = "docs/adr"
+mode = "nextgen"
+default_status = "proposed"
+no_edit = true
+
+[templates]
+format = "madr"
+variant = "full"
+
+[doctor]
+warnings_as_errors = false
+
+[generate]
+toc_prefix = ""
