@@ -1,5 +1,7 @@
 # 製品仕様
 
+製品境界は[ADR 0002](adr/0002-acpadaputawokuraiantofei-yi-cun-tosi-uiwowai-bu-kuraiantoniwei-neru.md)、runtime起動は[ADR 0003](adr/0003-zcodegong-shi-hosutosabisuwotong-kun-electronrantaimudeqi-dong-suru.md)、ACP versionは[ADR 0006](adr/0006-acp-v1qi-yue-wogu-ding-si-jiang-lai-nopurotokoruban-wofen-li-suru.md)、権限とcredential境界は[ADR 0007](adr/0007-neiteibunoquan-xian-ru-li-zi-ge-qing-bao-nojing-jie-wobao-chi-suru.md)を参照してください。
+
 ## 1. 製品名
 
 `zcode-acp`
@@ -12,7 +14,7 @@ ZCodeのエージェント機能はデスクトップGUIから利用できる一
 
 ## 3. 目標
 
-### 3.1 MVPの目標
+### 3.1 現在の目標
 
 - GUIセッションやdisplay serverなしで起動できる
 - ACP v1対応クライアントから新規ZCodeセッションを作成できる
@@ -20,18 +22,19 @@ ZCodeのエージェント機能はデスクトップGUIから利用できる一
 - permission requestをクライアントへ転送し、選択結果をZCodeへ返せる
 - promptをキャンセルできる
 - 子プロセス終了、protocol破損、非対応版を明確なエラーとして扱える
-- Linux x64でend-to-endの実モデル応答を確認できる
+- 対応ZCodeを使い、隔離した実機環境でend-to-endの実モデル応答を確認できる
 - ToadなどのTUIとacpxなどのheadless clientの双方で接続できる
 
-### 3.2 将来目標
+### 3.2 現在の対応範囲
 
-- persisted sessionのload/resume
-- model、thought level、modeのACP config options化
-- MCP server設定の受け渡し
-- image/resource prompt
-- slash commandsとusage情報
-- Linux arm64、macOS x64、Windows
-- ACP v2のversion negotiation対応
+- persisted sessionのload/resume/list/close
+- model、thought level、modeのACP config optionsとlegacy mode操作
+- stdio、HTTP、SSE MCP server設定の受け渡し
+- text、resource link、image、audio、embedded resource prompt
+- slash commands、plan、session情報、usage update
+- macOS arm64/x64、Linux arm64/x64、Windows x64のstandalone build
+
+ACP v2は現在の公開contractに含めません。対応時はADR 0006に従い、v1 handlerへ互換分岐を足さずversion別wire adapterとして実装します。
 
 ## 4. 非目標
 
@@ -41,7 +44,7 @@ ZCodeのエージェント機能はデスクトップGUIから利用できる一
 - ZCodeのGUI自動操作
 - `zcode.cjs` やZCodeアプリの再配布
 - private RPCを公開安定APIとして一般化すること
-- ZCode plugin/skill/marketplace管理APIのMVP公開
+- ZCode plugin/skill/marketplace管理APIの公開
 - ACPとZCodeの意味が異なる機能を、名前だけ合わせて疑似対応すること
 - 未知のバージョンを推測やsilent fallbackで動作させること
 
@@ -107,7 +110,7 @@ zcode-acp version
 
 ## 7. 対応プラットフォーム
 
-| Platform | MVP位置付け | 現在の根拠 |
+| Platform | 現在の位置付け | 現在の根拠 |
 | --- | --- | --- |
 | Linux arm64/x64 | release target | ZCode 3.10.2 contract、headless運用 |
 | macOS arm64/x64 | release target | ZCode 3.10.2 contract |
@@ -115,12 +118,12 @@ zcode-acp version
 
 全OSで同じcurrent artifact/protocolを使います。OS別に互換性versionを増やさず、install layoutとmetadata/process platform一致だけを分離して検証します。各OSでの実行確認とrelease binaryの生成確認は別のevidenceとして記録します。
 
-## 8. 機能要件
+## 8. 現在の機能要件
 
 ### FR-1: ACP initialization
 
 - stdio上のJSON-RPC 2.0を受け付ける
-- MVPでは `protocolVersion: 1` のみ選択する
+- 現在は `protocolVersion: 1` のみ選択する
 - 実装していないcapabilityをadvertiseしない
 - clientがv1を受理できない場合は明示的に終了する
 
@@ -154,7 +157,7 @@ zcode-acp version
 
 ### FR-6: Cancellation
 
-- ACP `session/cancel` を対応するZCode `session/stop` へ伝播する
+- ACP `session/cancel` を意味操作`cancelGeneration`へ変換し、現在のhost descriptorに従って`stopGeneration({taskId})`へ伝播する
 - cancel後の遅延eventを所定の終端まで順序通り処理する
 - prompt responseを `stopReason: cancelled` で完了する
 - cancelを一般エラーとして表示しない
@@ -183,13 +186,14 @@ stdoutにはACP frameだけを出します。ログ、banner、progress bar、st
 - permission modeを `yolo` へ暗黙変更しない
 - credential/header/prompt本文を既定ログへ出さない
 - `cwd` はabsolute pathとして検証する
-- MVPでは `additionalDirectories` をadvertiseしない
+- 現在は `additionalDirectories` をadvertiseしない
 
 ### NFR-3: Compatibility
 
-- ZCode app/build/platform、CLI version、metadata/host hash単位でcontract fixtureを保持する
+- ZCode app/CLI version、metadata semantics、process platform、host hash/export単位でcontract fixtureを保持する
+- app buildとmetadata raw SHA-256は診断情報とし、compatibility条件にはしない
 - ACP schemaとSDKをexact versionでlockする
-- ZCode更新時はcompatibility suiteを通すまでsupported matrixへ追加しない
+- ZCode更新時はcompatibility suiteを通した最新1バージョンへcontractを置き換える
 
 ### NFR-4: Portability
 
@@ -208,18 +212,18 @@ ZCode one-shotの既定が `yolo` であることを、app-serverの既定に一
 - 現在modeを取得できる場合はclientへ可視化する
 - modeを安全に決定できない版では、推測せずセッション作成を失敗させる
 
-mode configのACP公開はMVP後でも構いませんが、permission requestの正しいbridgeはMVP必須です。
+modeはACPのlegacy mode操作とconfig optionsの両方へ現在値として公開します。permission requestはnative optionとACP optionを一対一で対応させます。
 
-## 11. MVP受け入れ条件
+## 11. Release受け入れ条件
 
-MVPは次をすべて満たしたときだけ完成とします。
+releaseは次をすべて満たしたときだけ公開します。実機で確認した範囲は[Implementation status](10-implementation-status.md)に分離して記録します。
 
-1. Linux x64のdisplay serverなし環境で `zcode-acp` を起動できる
+1. display serverに依存しない公式host起動経路を使い、Linux standalone binaryを生成できる
 2. ACP v1 clientでinitializeとsession/newが成功する
 3. 実モデルへのtext promptで複数のstream updateと `end_turn` を得る
 4. read-only toolとwrite toolのpermission promptをclient上で確認できる
 5. denyとcancelがZCode側へ正しく伝わる
-6. Z.AI/BigModel Coding Plan利用時のprovider runtime headersが正しく適用される
+6. 通常のprovider runtime headersは公式host内で適用され、interactive recovery requestを偽の成功として扱わない
 7. child crashと不正frameでsilent hangしない
 8. stdoutにprotocol外文字列が一度も混入しない
 9. Toadとacpxの少なくとも二種類で同じ基本シナリオが通る

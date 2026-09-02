@@ -1,5 +1,7 @@
 # Headless Linux運用
 
+runtime起動は[ADR 0003](adr/0003-zcodegong-shi-hosutosabisuwotong-kun-electronrantaimudeqi-dong-suru.md)、互換性は[ADR 0005](adr/0005-zui-xin-nojian-zheng-ji-mizcode-1baziyondakewoyan-mi-nisapotosuru.md)、credential境界は[ADR 0007](adr/0007-neiteibunoquan-xian-ru-li-zi-ge-qing-bao-nojing-jie-wobao-chi-suru.md)、release buildは[ADR 0008](adr/0008-linuxshang-dequan-puratutohuomuxiang-keadaputanomiwobirudosuru.md)を参照してください。この文書は現在の運用手順と診断方法を記録します。
+
 ## 1. 対象
 
 現在の互換性対象はZCode 3.10.2 / CLI 0.16.5です。Linux固有の互換性契約は持たず、全OSで`zcode-host-3.10.2`と`zcode-task-v1`へ解決します。

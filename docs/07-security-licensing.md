@@ -1,5 +1,7 @@
 # Security and licensing
 
+権限・入力・credentialの設計判断は[ADR 0007](adr/0007-neiteibunoquan-xian-ru-li-zi-ge-qing-bao-nojing-jie-wobao-chi-suru.md)、ZCodeを再配布しないrelease境界は[ADR 0008](adr/0008-linuxshang-dequan-puratutohuomuxiang-keadaputanomiwobirudosuru.md)を参照してください。この文書は判断を実装・運用するsecurity controlを記録します。
+
 ## 1. Security goals
 
 `zcode-acp` は、外部client、private RPC、モデル・ツール、local credentialの境界に位置します。主なsecurity goalsは次です。
@@ -74,27 +76,22 @@ error/dataを転送する前に、key名と値patternの両方でredactします
 - install rootがgroup/world writableならdoctorで警告または拒否する
 - childへ `ELECTRON_RUN_AS_NODE=1` を明示する
 - child stdout/stderrを役割別に分離する
-- Unixではprocess group、Windows対応時はjob objectなど、platform固有のtree cleanupを検討する
+- shutdown時はgraceful exitを待ち、timeout後にchildへSIGTERM、続いてSIGKILLを送る
 
 ZCode GUIホストにある開発用command override環境変数を、そのままproduction surfaceとして公開しません。任意command executionになり得るためです。
 
 ## 6. Environment variables
 
-childはmodel providerやproxy設定のため一定のenvironmentを必要とする可能性があります。一方、parent environmentの無条件継承はsecret露出面を広げます。
+公式host serviceがmodel provider、proxy、ZCode stateの設定を利用できるよう、adapterは親processのenvironmentをhost processへ継承し、検証済みhost contract用の固定変数を追加します。任意commandや任意moduleを指定する環境変数は公開しません。
 
-Phase 0で実際に必要なenvironmentを観測し、次のどちらかを明示的に決定します。
-
-- ZCode公式runtimeと同じenvironment継承を行い、運用上clean environmentを要求する
-- 必要なvariableのallowlistを定義する
-
-根拠なしのallowlistで必要設定を壊したり、根拠なしの全継承を安全と主張したりしません。どちらを採用しても、environment値はログへ出しません。
+親processのenvironmentにはsecretが含まれ得るため、environment値をstdout、stderr、ACP message、test fixtureへ出しません。運用側でも必要最小限のenvironmentでadapterを起動します。allowlistへ変更する場合は、公式runtimeに必要な変数を実測してから別の設計判断として扱います。
 
 ## 7. Workspace isolation
 
 - ACP `cwd` をsessionのprimary rootとして固定
 - session IDとworkspace keyをbinding
 - 別cwdからのprompt/resumeを拒否
-- MVPでは `additionalDirectories` capabilityを出さない
+- 現在は `additionalDirectories` capabilityを出さない
 - canonicalizationでsymlink、case sensitivity、存在しないpathの挙動を固定
 - workspaceごとにZCode childを分離
 - childやsessionをOS user間で共有しない

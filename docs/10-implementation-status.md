@@ -2,6 +2,8 @@
 
 最終更新: 2026-09-01
 
+設計判断は[ADR一覧](adr/README.md)、current contractと検証手順は[Testing and compatibility](08-testing-compatibility.md)を参照してください。この文書は実装済み機能と実行済み検証だけを記録します。
+
 ## Current compatibility target
 
 | Field | Value |

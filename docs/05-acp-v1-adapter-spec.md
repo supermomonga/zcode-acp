@@ -1,12 +1,14 @@
 # ACP v1 adapter specification
 
+公開protocolをv1へ固定する理由は[ADR 0006](adr/0006-acp-v1qi-yue-wogu-ding-si-jiang-lai-nopurotokoruban-wofen-li-suru.md)、状態管理を伴う変換構造は[ADR 0004](adr/0004-zhuang-tai-wochi-tupurotokorubian-huan-tositeacptozcodewojie-sok-suru.md)、権限と入力の境界は[ADR 0007](adr/0007-neiteibunoquan-xian-ru-li-zi-ge-qing-bao-nojing-jie-wobao-chi-suru.md)を参照してください。
+
 ## 1. Protocol target
 
-MVPのwire contractはACP `protocolVersion: 1`です。調査スナップショットでは、公式 `schema-v1.19.0` を基準とします。
+現在のwire contractはACP `protocolVersion: 1`、`@agentclientprotocol/sdk` 1.2.1、公式 `schema-v1.19.0` です。
 
-ACP v2にはstable schema baselineがありますが、公式migration文書はv2 protocol surface全体をdraftと明記し、feature flagとv1併存を推奨しています。したがって、MVPでv1/v2のshapeを同じhandlerへ混在させません。
+ACP v2は現在の公開contractに含めず、v1/v2のshapeを同じhandlerへ混在させません。
 
-実装時には次をexact versionでlockします。
+次をexact versionでlockします。
 
 - `@agentclientprotocol/sdk`
 - 対応するv1 JSON Schema
@@ -176,9 +178,9 @@ active turn中はnative eventをACP `session/update` へ変換します。termin
 
 ## 7. `session/update` mapping
 
-調査時点のACP v1 stable update variantsに対するMVP mapping方針です。
+現在のACP v1 stable update variantsに対するmappingです。
 
-| ZCode event semantics | ACP v1 update | MVP |
+| ZCode event semantics | ACP v1 update | Current |
 | --- | --- | --- |
 | user message persisted | `user_message_chunk` | 任意。重複表示をclient matrixで確認 |
 | assistant text delta | `agent_message_chunk` | 必須 |
@@ -227,14 +229,9 @@ clientがform elicitation capabilityを出さない場合はnative requestをdec
 
 ## 10. Provider runtime headers bridge
 
-`interaction/requestProviderRuntimeHeaders` の対応は、対象providerをsupportedにするためのrelease blockerです。
+通常のprovider runtime headersは、公式host service内のmodel-provider serviceがZCodeのcredentialとregistryから構築・適用します。adapterはheader値を受け取りません。
 
-adapterは次のどちらかを、実トレースで証明して採用します。
-
-- app-server単体でheaders取得・適用を完結でき、reverse requestが不要になる正式設定経路
-- GUIホストと同じruntime model config更新をheadless adapterが実行する経路
-
-単にsuccess responseを返す実装は不可です。headers値はACP message、logs、test fixtureへ保存しません。
+hostからinteractive `providerRuntimeHeaders.request` が届いた場合、headless環境では回復操作を実行できないため、`headersApplied: false` を返してturnを `INTERACTION_UNSUPPORTED` で停止します。成功応答を偽装せず、header値をACP message、logs、test fixtureへ保存しません。
 
 ## 11. Cancellation
 
@@ -253,13 +250,13 @@ Clientは次のnotificationを送ります。
 adapter behavior:
 
 1. active turnをcancellingへ遷移
-2. native `session/stop` をidempotently送信
+2. 意味操作`cancelGeneration`をidempotently送り、現在のhost descriptorで`stopGeneration({taskId})`へ変換
 3. pending permission/user-inputをcancel
 4. 既に受信済みのupdateを順序通りflush
 5. native terminal stateを待つ
 6. original `session/prompt` responseを `stopReason: cancelled` で返す
 
-ACPのgranular `$/cancel_request` はv1.17.0以降のstable contractとして実装し、SDKのrequest signalをnative session stopへ接続します。wire regression testでrequest ID単位のabortを固定します。
+ACPのgranular `$/cancel_request` はv1.17.0以降のstable contractとして実装し、SDKのrequest signalを同じ`cancelGeneration`操作へ接続します。wire regression testでrequest ID単位のabortを固定します。
 
 ## 12. Session persistence
 
@@ -289,7 +286,7 @@ ZCodeの `session/setModel`、`session/setThoughtLevel`、`session/setMode` をA
 - mode/model/thought levelのIDを混同しない
 - `yolo` など高権限modeを明示表示する
 
-ACP v1のlegacy `session/set_mode` とconfig optionsのどちらを採用するかは、pinned schemaと対象client対応を見て一つに決めます。両方を同期する後方互換層は要件がない限り作りません。
+現在はACP v1の `session/set_mode` と `session/set_config_option` の両方を正式methodとして処理します。いずれも同じnative session settingsを更新し、native snapshotから生成したmodeとconfig optionsをclientへ返します。
 
 ## 14. Error mapping
 
@@ -327,17 +324,6 @@ JSON-RPC/ACP標準error codeはpinned SDKの定数を使います。独自code�
 
 client機能が `_meta.zcode` に依存しないことを原則とします。
 
-## 16. ACP v2への将来対応
+## 16. 対象外のprotocol version
 
-v2は同じhandlerへif分岐を足すのではなく、version別wire adapterとして追加します。v2では特に次がv1と異なります。
-
-- initialization fieldが `capabilities` / required `info`
-- `session/prompt` responseは受付ackで、完了は `state_update`
-- message IDが必須
-- whole-message upsertとchunkの併存
-- `tool_call` がなく、最初の `tool_call_update` が作成を兼ねる
-- planは `plan_update`
-- loadはresume + replayへ統合
-- client filesystem/terminal surfaceが削除
-
-v1とv2の型、fixture、testsを分離し、version negotiation後は一接続につき片方だけを話します。
+ACP v2は現在の仕様対象外です。対応する場合はADR 0006に従い、version別wire adapter、型、fixture、testを追加し、version negotiation後は一connectionにつき一つのprotocolだけを扱います。

@@ -1,5 +1,7 @@
 # References and evidence
 
+この文書は互換性判定に使う一次資料、実測値、再現commandを記録します。これらの証拠を最新の検証済み1バージョンへ限定する理由は[ADR 0005](adr/0005-zui-xin-nojian-zheng-ji-mizcode-1baziyondakewoyan-mi-nisapotosuru.md)を参照してください。
+
 ## 1. Current ZCode artifact
 
 調査日: 2026-09-01
