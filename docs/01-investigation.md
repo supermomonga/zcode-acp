@@ -4,7 +4,7 @@
 
 ## 1. 調査対象
 
-2026-09-01時点のZCode 3.10.2 / CLI 0.16.5を、現在サポートする唯一のreleaseとして調査しました。互換性契約は過去releaseへ累積せず、新releaseを採用するときに置換します。
+2026-09-04時点のZCode 3.11.2 / CLI 0.16.5を、現在サポートする唯一のreleaseとして調査しました。互換性契約は過去releaseへ累積せず、新releaseを採用するときに置換します。
 
 ## 2. 配布構造
 
@@ -40,13 +40,13 @@ metadataは次の意味値を必須とします。
 
 ## 5. Host artifact
 
-ZCode 3.10.2の現在値は次のとおりです。
+ZCode 3.11.2の現在値は次のとおりです。
 
 | Field | Value |
 | --- | --- |
-| Artifact ID | `zcode-host-3.10.2` |
+| Artifact ID | `zcode-host-3.11.2` |
 | Host index | `out/host/index.js` |
-| Host index SHA-256 | `72e57751ed5563338335a52cd688c7fba0707ef72d8ce782356b1f0b39c77462` |
+| Host index SHA-256 | `30911a90dadc5c384959d00d95ccc70c8cf38c74a9cb99c3168b0897d046d215` |
 | RPC module | `out/host/chunk-KGXW6KHC.js` |
 | RPC module SHA-256 | `e66203598b60d8728260ad7631f295f9d6deb8276b06e8f0cab8776773c75b31` |
 | Required exports | `g`、`i`、`j` |
@@ -67,7 +67,7 @@ permissionの旧response object形式や、structured inputのnested response形
 
 ## 7. 現在のcompatibility判定
 
-- app versionは`3.10.2`だけを許可
+- app versionは`3.11.2`だけを許可
 - CLI versionは`0.16.5`だけを許可
 - CLI SHA-256一致は`verified`、差分は`modified`
 - CLIが`modified`でもhost artifact一致時は起動可能

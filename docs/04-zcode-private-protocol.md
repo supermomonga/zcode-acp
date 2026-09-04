@@ -4,7 +4,7 @@
 
 ## 1. Scope
 
-対象はZCode 3.10.2 / CLI 0.16.5の`app.asar/out/host`に含まれる公式local host serviceです。これは公開APIではないため、現在のmanifestが示すartifact fingerprintと完全一致する場合だけ起動します。
+対象はZCode 3.11.2 / CLI 0.16.5の`app.asar/out/host`に含まれる公式local host serviceです。これは公開APIではないため、現在のmanifestが示すartifact fingerprintと完全一致する場合だけ起動します。
 
 `zcode.cjs app-server --stdio`の直接protocolではdesktopのmodel-provider registryを利用できないことが実測されています。production経路の選定理由はADR 0003に記録しています。
 
@@ -12,8 +12,8 @@
 
 `HostArtifactDescriptor`は実ファイルの同一性を表します。
 
-- ID: `zcode-host-3.10.2`
-- app version: `3.10.2`
+- ID: `zcode-host-3.11.2`
+- app version: `3.11.2`
 - CLI version: `0.16.5`
 - host index: `out/host/index.js`
 - RPC module: `out/host/chunk-KGXW6KHC.js`
@@ -92,8 +92,8 @@ app buildとmetadata raw SHA-256は診断表示だけで、互換性条件では
 ## 8. Current fingerprints
 
 ```text
-CLI SHA-256:        3597160465b67da248fa3fb919920ca30d4e093003a4d70cde2a2e33903cbabc
-host index SHA-256: 72e57751ed5563338335a52cd688c7fba0707ef72d8ce782356b1f0b39c77462
+CLI SHA-256:        e9f1868c0fdb863537ed910ee3828b9be96b8c2fd805473f63b439e1113266b8
+host index SHA-256: 30911a90dadc5c384959d00d95ccc70c8cf38c74a9cb99c3168b0897d046d215
 RPC module SHA-256: e66203598b60d8728260ad7631f295f9d6deb8276b06e8f0cab8776773c75b31
 ```
 

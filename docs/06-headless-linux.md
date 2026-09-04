@@ -4,7 +4,7 @@ runtime起動は[ADR 0003](adr/0003-zcodegong-shi-hosutosabisuwotong-kun-electro
 
 ## 1. 対象
 
-現在の互換性対象はZCode 3.10.2 / CLI 0.16.5です。Linux固有の互換性契約は持たず、全OSで`zcode-host-3.10.2`と`zcode-task-v1`へ解決します。
+現在の互換性対象はZCode 3.11.2 / CLI 0.16.5です。Linux固有の互換性契約は持たず、全OSで`zcode-host-3.11.2`と`zcode-task-v1`へ解決します。
 
 Linux固有の処理は、install rootとElectron executableの解決、およびmetadataの`platform`が実行processと一致することだけです。
 
@@ -29,7 +29,7 @@ credentialはZCodeが所有します。別OSから状態を移行する場合、
 
 ```json
 {
-  "hostArtifact": "zcode-host-3.10.2",
+  "hostArtifact": "zcode-host-3.11.2",
   "hostProtocol": "zcode-task-v1",
   "compatibility": "supported"
 }

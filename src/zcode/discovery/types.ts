@@ -15,7 +15,7 @@ export interface RuntimePaths {
   readonly hostArchive: string;
 }
 
-export type HostArtifactId = "zcode-host-3.10.2";
+export type HostArtifactId = "zcode-host-3.11.2";
 
 export type HostProtocolId = "zcode-task-v1";
 

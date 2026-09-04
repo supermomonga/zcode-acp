@@ -112,9 +112,9 @@ zcode-acp version
 
 | Platform | 現在の位置付け | 現在の根拠 |
 | --- | --- | --- |
-| Linux arm64/x64 | release target | ZCode 3.10.2 contract、headless運用 |
-| macOS arm64/x64 | release target | ZCode 3.10.2 contract |
-| Windows x64 | release target | ZCode 3.10.2 contract |
+| Linux arm64/x64 | release target | ZCode 3.11.2 contract、headless運用 |
+| macOS arm64/x64 | release target | ZCode 3.11.2 contract |
+| Windows x64 | release target | ZCode 3.11.2 contract |
 
 全OSで同じcurrent artifact/protocolを使います。OS別に互換性versionを増やさず、install layoutとmetadata/process platform一致だけを分離して検証します。各OSでの実行確認とrelease binaryの生成確認は別のevidenceとして記録します。
 

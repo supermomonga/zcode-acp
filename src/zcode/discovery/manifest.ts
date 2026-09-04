@@ -23,14 +23,14 @@ export const CURRENT_HOST_PROTOCOL: HostProtocolDescriptor = {
 };
 
 export const CURRENT_ZCODE_ARTIFACT: HostArtifactDescriptor = {
-  id: "zcode-host-3.10.2",
-  appVersion: "3.10.2",
+  id: "zcode-host-3.11.2",
+  appVersion: "3.11.2",
   cliVersion: "0.16.5",
-  cliSha256: "3597160465b67da248fa3fb919920ca30d4e093003a4d70cde2a2e33903cbabc",
+  cliSha256: "e9f1868c0fdb863537ed910ee3828b9be96b8c2fd805473f63b439e1113266b8",
   protocolId: "zcode-task-v1",
   hostIndexRelativePath: "out/host/index.js",
   hostRpcModuleRelativePath: "out/host/chunk-KGXW6KHC.js",
-  hostIndexSha256: "72e57751ed5563338335a52cd688c7fba0707ef72d8ce782356b1f0b39c77462",
+  hostIndexSha256: "30911a90dadc5c384959d00d95ccc70c8cf38c74a9cb99c3168b0897d046d215",
   hostRpcModuleSha256: "e66203598b60d8728260ad7631f295f9d6deb8276b06e8f0cab8776773c75b31",
   rpcExports: { protocol: "g", client: "i", service: "j" },
 };
