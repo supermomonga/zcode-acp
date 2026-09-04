@@ -240,6 +240,186 @@ describe("HeadlessZCodeSessionService", () => {
     }
   });
 
+  test("keeps an advertised model selectable after a mode snapshot omits it", async () => {
+    const base = testModel("GLM-5.3");
+    const flash = testModel("GLM-5.3-Flash", "fast");
+    const harness = await createConfigHarness(configSettings({ models: [base, flash] }));
+    try {
+      await harness.service.newSession({ cwd: harness.workspacePath, mcpServers: [] });
+      harness.setResponseSettings(
+        "setMode",
+        configSettings({ models: [base], mode: "plan" }),
+      );
+      await harness.service.setSessionMode({ sessionId: "session-1", modeId: "plan" });
+
+      harness.setResponseSettings(
+        "setModel",
+        configSettings({ models: [base, flash], currentModel: flash, mode: "plan" }),
+      );
+      const result = await harness.service.setSessionConfigOption({
+        sessionId: "session-1",
+        configId: "zcode.model",
+        value: testModelValue(flash),
+      });
+
+      expect(harness.requests.at(-1)).toEqual({
+        method: "setModel",
+        params: {
+          workspacePath: harness.workspacePath,
+          sessionId: "session-1",
+          model: flash,
+          persistAsWorkspaceLastUsed: true,
+        },
+      });
+      expect(result.configOptions[0]?.currentValue).toBe(testModelValue(flash));
+    } finally {
+      await harness.service.close();
+    }
+  });
+
+  test("keeps an advertised model selectable across an unnotified idle snapshot", async () => {
+    const base = testModel("GLM-5.3");
+    const flash = testModel("GLM-5.3-Flash");
+    const harness = await createConfigHarness(configSettings({ models: [base, flash] }));
+    try {
+      await harness.service.newSession({ cwd: harness.workspacePath, mcpServers: [] });
+      await harness.emitSnapshot(configSettings({ models: [base] }));
+      harness.setResponseSettings(
+        "setModel",
+        configSettings({ models: [base, flash], currentModel: flash }),
+      );
+
+      await expect(harness.service.setSessionConfigOption({
+        sessionId: "session-1",
+        configId: "zcode.model",
+        value: testModelValue(flash),
+      })).resolves.toBeDefined();
+      expect(harness.requests.at(-1)).toMatchObject({
+        method: "setModel",
+        params: { model: flash },
+      });
+    } finally {
+      await harness.service.close();
+    }
+  });
+
+  test("replaces advertised model choices only after publishing successful settings", async () => {
+    const base = testModel("GLM-5.3");
+    const flash = testModel("GLM-5.3-Flash");
+    const next = testModel("GLM-5.4");
+    const harness = await createConfigHarness(configSettings({ models: [base, flash] }));
+    try {
+      await harness.service.newSession({ cwd: harness.workspacePath, mcpServers: [] });
+      const requestCount = harness.requests.length;
+      for (const value of [testModelValue(next), 42]) {
+        await expect(harness.service.setSessionConfigOption({
+          sessionId: "session-1",
+          configId: "zcode.model",
+          value,
+        })).rejects.toMatchObject({ code: "INVALID_CONFIGURATION" });
+      }
+      expect(harness.requests).toHaveLength(requestCount);
+
+      harness.setResponseSettings(
+        "setModel",
+        configSettings({ models: [base, next], currentModel: base }),
+      );
+      await harness.service.setSessionConfigOption(
+        {
+          sessionId: "session-1",
+          configId: "zcode.model",
+          value: testModelValue(base),
+        },
+        harness.interaction,
+      );
+      const published = harness.updates.at(-1);
+      expect(published).toMatchObject({ sessionUpdate: "config_option_update" });
+
+      const afterPublishCount = harness.requests.length;
+      await expect(harness.service.setSessionConfigOption({
+        sessionId: "session-1",
+        configId: "zcode.model",
+        value: testModelValue(flash),
+      })).rejects.toMatchObject({ code: "INVALID_CONFIGURATION" });
+      expect(harness.requests).toHaveLength(afterPublishCount);
+
+      harness.setResponseSettings(
+        "setModel",
+        configSettings({ models: [base, next], currentModel: next }),
+      );
+      await expect(harness.service.setSessionConfigOption({
+        sessionId: "session-1",
+        configId: "zcode.model",
+        value: testModelValue(next),
+      })).resolves.toBeDefined();
+      expect(harness.requests.at(-1)).toMatchObject({
+        method: "setModel",
+        params: { model: next },
+      });
+    } finally {
+      await harness.service.close();
+    }
+  });
+
+  test("tracks advertised thought levels independently from native snapshots", async () => {
+    const model = testModel("GLM-5.3");
+    const harness = await createConfigHarness(configSettings({
+      models: [model],
+      thoughtLevels: ["low", "high"],
+      currentThoughtLevel: "low",
+    }));
+    try {
+      await harness.service.newSession({ cwd: harness.workspacePath, mcpServers: [] });
+      await harness.emitSnapshot(configSettings({
+        models: [model],
+        thoughtLevels: ["low"],
+        currentThoughtLevel: "low",
+      }));
+      harness.setResponseSettings(
+        "setThoughtLevel",
+        configSettings({
+          models: [model],
+          thoughtLevels: ["low", "medium"],
+          currentThoughtLevel: "medium",
+        }),
+      );
+      await harness.service.setSessionConfigOption(
+        {
+          sessionId: "session-1",
+          configId: "zcode.thought_level",
+          value: "high",
+        },
+        harness.interaction,
+      );
+      expect(harness.requests.at(-1)).toMatchObject({
+        method: "setThoughtLevel",
+        params: { thoughtLevel: "high" },
+      });
+
+      const requestCount = harness.requests.length;
+      for (const value of ["high", 42]) {
+        await expect(harness.service.setSessionConfigOption({
+          sessionId: "session-1",
+          configId: "zcode.thought_level",
+          value,
+        })).rejects.toMatchObject({ code: "INVALID_CONFIGURATION" });
+      }
+      expect(harness.requests).toHaveLength(requestCount);
+
+      await expect(harness.service.setSessionConfigOption({
+        sessionId: "session-1",
+        configId: "zcode.thought_level",
+        value: "medium",
+      })).resolves.toBeDefined();
+      expect(harness.requests.at(-1)).toMatchObject({
+        method: "setThoughtLevel",
+        params: { thoughtLevel: "medium" },
+      });
+    } finally {
+      await harness.service.close();
+    }
+  });
+
   test("maps repeated native progress to one in-progress update", async () => {
     const harness = await createToolLifecycleHarness();
     try {
@@ -503,6 +683,142 @@ function boundMode(service: HeadlessZCodeSessionEngine): string | undefined {
     { settings: SessionSettings }
   >;
   return sessions.get("session-1")?.settings.mode.current;
+}
+
+interface TestModelRef {
+  readonly [key: string]: unknown;
+  readonly providerId: string;
+  readonly modelId: string;
+  readonly variant?: string;
+}
+
+interface ConfigHarness {
+  readonly service: HeadlessZCodeSessionEngine;
+  readonly workspacePath: string;
+  readonly requests: Array<{ method: string; params: unknown }>;
+  readonly updates: SessionUpdate[];
+  readonly interaction: SessionInteraction;
+  setResponseSettings(method: string, settings: SessionSettings): void;
+  emitSnapshot(settings: SessionSettings): Promise<void>;
+}
+
+async function createConfigHarness(initialSettings: SessionSettings): Promise<ConfigHarness> {
+  const workspacePath = await realpath(process.cwd());
+  const requests: Array<{ method: string; params: unknown }> = [];
+  const updates: SessionUpdate[] = [];
+  const responseSettings = new Map<string, SessionSettings>();
+  let currentSettings = initialSettings;
+  let subscription: ((event: DynamicEvent) => Promise<void> | void) | undefined;
+
+  const snapshot = (settings: SessionSettings): SessionSnapshot => ({
+    session: {
+      sessionId: "session-1",
+      status: "idle",
+      workspace: { workspacePath },
+    },
+    settings,
+    messages: [],
+    runtime: {},
+    slashCommands: [],
+  });
+  const bridge = {
+    async request(method: string, params: unknown) {
+      requests.push({ method, params });
+      if (method === "initialize") return { available: true };
+      if (method === "readWorkspaceState") {
+        return {
+          workspace: { workspacePath },
+          settings: currentSettings,
+          modelCatalog: { providers: [{}], available: [] },
+        };
+      }
+      if (method === "createSession") return snapshot(currentSettings);
+      if (method === "resumeSession" || method === "readSession") {
+        currentSettings = responseSettings.get(method) ?? currentSettings;
+        return snapshot(currentSettings);
+      }
+      if (method === "setMode" || method === "setModel" || method === "setThoughtLevel") {
+        currentSettings = responseSettings.get(method) ?? currentSettings;
+        return snapshot(currentSettings);
+      }
+      throw new Error(`Unexpected request: ${method}`);
+    },
+    async subscribe(
+      _target: unknown,
+      handler: (event: DynamicEvent) => Promise<void> | void,
+    ) {
+      subscription = handler;
+      return { async dispose() {} };
+    },
+    async close() {},
+  };
+  const service = new HeadlessZCodeSessionEngine(new NullLogger());
+  Reflect.set(service, "bridgePromise", Promise.resolve(bridge));
+  const interaction: SessionInteraction = {
+    async notify(_sessionId, update) {
+      updates.push(update);
+    },
+    async requestPermission() {
+      return null;
+    },
+    async requestUserInput() {
+      return { action: "decline" };
+    },
+  };
+
+  return {
+    service,
+    workspacePath,
+    requests,
+    updates,
+    interaction,
+    setResponseSettings(method, settings) {
+      responseSettings.set(method, settings);
+    },
+    async emitSnapshot(settings) {
+      if (subscription === undefined) throw new Error("Subscription was not established");
+      currentSettings = settings;
+      await subscription({ type: "snapshot", snapshot: snapshot(settings) });
+    },
+  };
+}
+
+function testModel(modelId: string, variant?: string): TestModelRef {
+  return {
+    providerId: "builtin:zai-coding-plan",
+    modelId,
+    ...(variant === undefined ? {} : { variant }),
+  };
+}
+
+function testModelValue(model: TestModelRef): string {
+  return JSON.stringify([model.providerId, model.modelId, model.variant ?? null]);
+}
+
+function configSettings(options: {
+  readonly models: readonly TestModelRef[];
+  readonly currentModel?: TestModelRef;
+  readonly mode?: string;
+  readonly thoughtLevels?: readonly string[];
+  readonly currentThoughtLevel?: string;
+}): SessionSettings {
+  const currentModel = options.currentModel ?? options.models[0];
+  if (currentModel === undefined) throw new Error("A current model is required");
+  const thoughtLevels = options.thoughtLevels ?? [];
+  return {
+    model: {
+      current: currentModel,
+      available: options.models.map((ref) => ({ ref, label: ref.modelId })),
+    },
+    thoughtLevel: {
+      enabled: thoughtLevels.length > 0,
+      ...(options.currentThoughtLevel === undefined
+        ? {}
+        : { current: options.currentThoughtLevel }),
+      available: thoughtLevels.map((value) => ({ value, label: value })),
+    },
+    mode: { current: options.mode ?? "build" },
+  };
 }
 
 interface ToolLifecycleHarness {

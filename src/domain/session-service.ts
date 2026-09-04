@@ -70,7 +70,15 @@ interface SessionBinding {
   subscription: HostSubscription;
   settings: SessionSettings;
   snapshot: SessionSnapshot;
+  advertisedConfig: AdvertisedConfig;
   active?: ActiveTurn;
+}
+
+type ModelRef = SessionSettings["model"]["available"][number]["ref"];
+
+interface AdvertisedConfig {
+  readonly modelRefsByValue: ReadonlyMap<string, ModelRef>;
+  readonly thoughtLevels: ReadonlySet<string>;
 }
 
 interface NativePermissionAnswer {
@@ -320,9 +328,9 @@ export class HeadlessZCodeSessionEngine implements SessionEngine {
   ): Promise<{ configOptions: SessionConfigOption[] }> {
     const binding = this.requireSession(params.sessionId);
     if (params.configId === MODEL_CONFIG_ID && !("type" in params)) {
-      const selected = binding.settings.model.available.find(
-        (option) => modelValue(option.ref) === params.value,
-      );
+      const selected = typeof params.value === "string"
+        ? binding.advertisedConfig.modelRefsByValue.get(params.value)
+        : undefined;
       if (selected === undefined) {
         throw new AdapterError("INVALID_CONFIGURATION", `Unknown ZCode model: ${params.value}`);
       }
@@ -331,15 +339,19 @@ export class HeadlessZCodeSessionEngine implements SessionEngine {
         {
           workspacePath: binding.workspacePath,
           sessionId: binding.sessionId,
-          model: selected.ref,
+          model: selected,
           persistAsWorkspaceLastUsed: true,
         },
         SessionSnapshotSchema,
         60_000,
       );
       updateBindingSnapshot(binding, snapshot);
+      updateAdvertisedConfig(binding, snapshot.settings);
     } else if (params.configId === THOUGHT_CONFIG_ID && !("type" in params)) {
-      if (!binding.settings.thoughtLevel.available.some((option) => option.value === params.value)) {
+      if (
+        typeof params.value !== "string" ||
+        !binding.advertisedConfig.thoughtLevels.has(params.value)
+      ) {
         throw new AdapterError("INVALID_CONFIGURATION", `Unknown thought level: ${params.value}`);
       }
       const snapshot = await (await this.getBridge()).request(
@@ -354,6 +366,7 @@ export class HeadlessZCodeSessionEngine implements SessionEngine {
         60_000,
       );
       updateBindingSnapshot(binding, snapshot);
+      updateAdvertisedConfig(binding, snapshot.settings);
     } else {
       throw new AdapterError("INVALID_CONFIGURATION", `Unknown config option: ${params.configId}`);
     }
@@ -595,6 +608,7 @@ export class HeadlessZCodeSessionEngine implements SessionEngine {
     const previous = this.sessions.get(snapshot.session.sessionId);
     if (previous !== undefined) {
       updateBindingSnapshot(previous, snapshot);
+      updateAdvertisedConfig(previous, snapshot.settings);
       this.workspaceCommands.set(workspacePath, availableCommands(snapshot));
       return previous;
     }
@@ -621,6 +635,7 @@ export class HeadlessZCodeSessionEngine implements SessionEngine {
       subscription,
       settings: snapshot.settings,
       snapshot,
+      advertisedConfig: advertisedConfig(snapshot.settings),
     };
     this.sessions.set(binding.sessionId, binding);
     this.workspaceCommands.set(workspacePath, availableCommands(snapshot));
@@ -638,6 +653,7 @@ export class HeadlessZCodeSessionEngine implements SessionEngine {
       sessionUpdate: "available_commands_update",
       availableCommands: availableCommands(snapshot),
     });
+    updateAdvertisedConfig(this.requireSession(sessionId), snapshot.settings);
     await interaction.notify(sessionId, {
       sessionUpdate: "config_option_update",
       configOptions: configOptions(snapshot.settings),
@@ -1301,6 +1317,26 @@ function updateBindingSnapshot(binding: SessionBinding, snapshot: SessionSnapsho
   binding.settings = snapshot.settings;
   binding.snapshot = snapshot;
   return currentModeId;
+}
+
+function updateAdvertisedConfig(binding: SessionBinding, settings: SessionSettings): void {
+  binding.advertisedConfig = advertisedConfig(settings);
+}
+
+function advertisedConfig(settings: SessionSettings): AdvertisedConfig {
+  const modelRefsByValue = new Map<string, ModelRef>();
+  for (const option of settings.model.available) {
+    const value = modelValue(option.ref);
+    if (!modelRefsByValue.has(value)) modelRefsByValue.set(value, option.ref);
+  }
+
+  const thoughtLevels = new Set<string>();
+  const thought = settings.thoughtLevel;
+  if (thought.enabled && thought.current !== undefined && thought.available.length > 0) {
+    for (const option of thought.available) thoughtLevels.add(option.value);
+  }
+
+  return { modelRefsByValue, thoughtLevels };
 }
 
 export function configOptions(settings: SessionSettings): SessionConfigOption[] {
