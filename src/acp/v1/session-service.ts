@@ -2,6 +2,7 @@ import type * as acp from "@agentclientprotocol/sdk";
 import type { Logger } from "../../diagnostics/logger.ts";
 import { AdapterError } from "../../domain/errors.ts";
 import type {
+  PlanApprovalRequest,
   PermissionRequest,
   SessionEngine,
   SessionInteraction,
@@ -47,6 +48,7 @@ export interface SessionService {
 
 export class HeadlessZCodeSessionService implements SessionService {
   private formElicitationSupported = false;
+  private planOperationsSupported = false;
 
   constructor(
     private readonly engine: SessionEngine,
@@ -60,6 +62,7 @@ export class HeadlessZCodeSessionService implements SessionService {
 
   async initialize(params: acp.InitializeRequest): Promise<void> {
     this.formElicitationSupported = params.clientCapabilities?.elicitation?.form != null;
+    this.planOperationsSupported = params.clientCapabilities?.plan != null;
   }
 
   async newSession(params: acp.NewSessionRequest): Promise<acp.NewSessionResponse> {
@@ -135,6 +138,7 @@ export class HeadlessZCodeSessionService implements SessionService {
 
   private interaction(context: acp.AgentContext): SessionInteraction {
     return {
+      planOperationsSupported: this.planOperationsSupported,
       notify: async (sessionId, update) => {
         await context.notify("session/update", {
           sessionId,
@@ -142,6 +146,15 @@ export class HeadlessZCodeSessionService implements SessionService {
         });
       },
       requestPermission: async (request) => await requestPermission(context, request),
+      requestPlanApproval: async (request) => {
+        if (!this.formElicitationSupported) {
+          throw new AdapterError(
+            "INTERACTION_UNSUPPORTED",
+            "ZCode requested plan approval but the ACP client cannot render form elicitation",
+          );
+        }
+        return await requestPlanApproval(context, request);
+      },
       requestUserInput: async (request) => {
         if (!this.formElicitationSupported) {
           throw new AdapterError(
@@ -153,6 +166,53 @@ export class HeadlessZCodeSessionService implements SessionService {
       },
     };
   }
+}
+
+async function requestPlanApproval(
+  context: acp.AgentContext,
+  request: PlanApprovalRequest,
+): Promise<
+  { action: "accept"; optionId: string } | { action: "decline" | "cancel" }
+> {
+  const result = await context.request<
+    acp.CreateElicitationResponse,
+    acp.CreateElicitationRequest
+  >("elicitation/create", {
+    mode: "form",
+    sessionId: request.sessionId,
+    ...(request.toolCallId === undefined ? {} : { toolCallId: request.toolCallId }),
+    message: request.message,
+    requestedSchema: {
+      type: "object",
+      properties: {
+        optionId: {
+          type: "string",
+          title: "Plan approval",
+          description: request.message,
+          oneOf: request.options.map((option) => ({
+            const: option.optionId,
+            title: option.name,
+            ...(option.description === undefined ? {} : { description: option.description }),
+          })),
+        },
+      },
+      required: ["optionId"],
+    },
+  });
+  if (result.action === "decline" || result.action === "cancel") {
+    return { action: result.action };
+  }
+  if (result.action !== "accept") {
+    throw new AdapterError(
+      "INTERACTION_UNSUPPORTED",
+      `Unsupported ACP elicitation action: ${String(result.action)}`,
+    );
+  }
+  const optionId = (result.content as Record<string, unknown> | undefined)?.optionId;
+  if (typeof optionId !== "string") {
+    throw new AdapterError("NATIVE_PROTOCOL_ERROR", "Plan approval did not select an option");
+  }
+  return { action: "accept", optionId };
 }
 
 async function requestPermission(

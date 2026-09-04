@@ -4,7 +4,7 @@
 
 ## 1. Protocol target
 
-現在のwire contractはACP `protocolVersion: 1`、`@agentclientprotocol/sdk` 1.2.1、公式 `schema-v1.19.0` です。
+現在のwire contractはACP `protocolVersion: 1`、`@agentclientprotocol/sdk` 1.4.0、公式安定版 `schema-v1.21.0` です。SDK同梱schemaには不安定なplan operationsが含まれるため、公式安定schemaとSDK同梱schemaのSHA-256を別々に固定します。
 
 ACP v2は現在の公開contractに含めず、v1/v2のshapeを同じhandlerへ混在させません。
 
@@ -106,7 +106,7 @@ clientがterminal auth capabilityを出した場合だけ、adapter自身の`log
 
 - `session/update` notification
 - `session/request_permission` request
-- `elicitation/create` request（client capabilityがある場合）
+- `elicitation/create` request（form capabilityがある場合）
 
 ACP v1のstable schemaに他のmethodが存在しても、実装・検証していないmethodはadvertiseせず、呼ばれた場合はmethod not foundまたはcapability violationとして処理します。
 
@@ -189,7 +189,7 @@ active turn中はnative eventをACP `session/update` へ変換します。termin
 
 ## 7. `session/update` mapping
 
-現在のACP v1 stable update variantsに対するmappingです。
+現在のACP v1 update variantsに対するmappingです。
 
 | ZCode event semantics | ACP v1 update | Current |
 | --- | --- | --- |
@@ -198,7 +198,8 @@ active turn中はnative eventをACP `session/update` へ変換します。termin
 | explicitly classified thought delta | `agent_thought_chunk` | 対応可能な場合のみ |
 | tool created | `tool_call` | 必須 |
 | tool status/content changed | `tool_call_update` | 必須 |
-| plan changed | `plan` | event shape確認後 |
+| plan proposal | `plan_update` markdown、または従来型 `plan` | implemented |
+| todos changed | `plan_update` items、または従来型 `plan` | implemented |
 | slash commands changed | `available_commands_update` | implemented |
 | mode changed | `current_mode_update` | implemented |
 | config changed | `config_option_update` | implemented |
@@ -232,19 +233,33 @@ ZCode `interaction/requestPermission` とACP `session/request_permission` を対
 
 exact payloadはpinned ACP schemaとZCode golden traceから型を生成します。ZCodeにない「allow always」や、ACPにない独自の永続許可を推測で合成しません。
 
-## 9. User-input bridge
+## 9. Plan approval bridge
 
-ZCode `interaction/requestUserInput` の選択肢質問をACP v1.19のform `elicitation/create`へ変換します。single-selectはstring `oneOf`、multi-selectはarray `anyOf`とし、accept/decline/cancelをnative responseへ一対一で返します。
+ZCode 3.11.2のプラン承認は、`userInput.request` の `schema.interaction === "plan_approval"` と `input.plan`、または `permission.request` の `toolName === "ExitPlanMode"` と `input.plan` として届きます。どちらも通常の権限確認とは分離し、次の順序で変換します。
+
+1. プラン本文をACPへ通知する。
+2. form `elicitation/create` でZCodeの選択肢を提示する。
+3. 選択されたoption IDを元のnative requestへ返す。
+
+`clientCapabilities.plan` が非nullの場合だけ、不安定な `plan_update` / `plan_removed` を使用します。提案本文は `{ type: "markdown", planId: "zcode-plan-proposal:<requestId>", content }`、todosは `{ type: "items", planId: "zcode-todos", entries }` とします。capabilityが未指定またはnullの場合は従来型 `plan` へ変換し、提案本文を1件のentryとしてpending、承認後はin_progressで通知します。
+
+decline、cancel、errorでは提案を直ちに削除します。accept後は同じturnの終了まで保持してから削除します。todosは毎回全件を置換し、空になったときも削除を通知します。本文欠落、未知option、allow/denyへ安全に対応付けられないpermission optionは `NATIVE_PROTOCOL_ERROR` とし、allowを返しません。
+
+`elicitation/create` はschema-v1.21.0で安定仕様です。一方、plan operationsはSDK 1.4.0でも不安定仕様なので、capability negotiationなしでは送信しません。`session/request_permission` は通常のツール実行許可だけに使用します。
+
+## 10. User-input bridge
+
+ZCode `interaction/requestUserInput` の通常の選択肢質問をACP v1のform `elicitation/create`へ変換します。single-selectはstring `oneOf`、multi-selectはarray `anyOf`とし、accept/decline/cancelをnative responseへ一対一で返します。
 
 clientがform elicitation capabilityを出さない場合はnative requestをdeclineしてturnを失敗させます。permission requestへの流用や、agent messageを表示してnative requestを放置する方式は禁止します。
 
-## 10. Provider runtime headers bridge
+## 11. Provider runtime headers bridge
 
 通常のprovider runtime headersは、公式host service内のmodel-provider serviceがZCodeのcredentialとregistryから構築・適用します。adapterはheader値を受け取りません。
 
 hostからinteractive `providerRuntimeHeaders.request` が届いた場合、headless環境では回復操作を実行できないため、`headersApplied: false` を返してturnを `INTERACTION_UNSUPPORTED` で停止します。成功応答を偽装せず、header値をACP message、logs、test fixtureへ保存しません。
 
-## 11. Cancellation
+## 12. Cancellation
 
 Clientは次のnotificationを送ります。
 

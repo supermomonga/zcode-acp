@@ -15,7 +15,7 @@
 - Text, resource-link, image, audio, and embedded-resource prompts
 - Assistant and reasoning streams
 - Per-session model, thought-level, and mode configuration
-- Slash commands, plans, session information, and context-usage updates
+- Slash commands, capability-negotiated plan proposals and todos, session information, and context-usage updates
 - Native forwarding of stdio, HTTP, and SSE MCP server configuration
 - Structured user input through ACP form elicitation
 - Tool-call creation, progress, completion, and failure notifications
@@ -25,7 +25,7 @@
 - Single-file executables for macOS arm64/x64, Linux arm64/x64, and Windows x64
 - Fail-closed host compatibility checks with separate CLI integrity reporting
 
-`additionalDirectories` is not advertised because the current ZCode host does not provide the required API. `session/list` requires a working directory to match the ZCode host protocol and returns invalid params when it is omitted. If structured input is required but the ACP client does not support form elicitation, the adapter declines the native request and explicitly stops the turn.
+`additionalDirectories` is not advertised because the current ZCode host does not provide the required API. `session/list` requires a working directory to match the ZCode host protocol and returns invalid params when it is omitted. If structured input or plan approval is required but the ACP client does not support form elicitation, the adapter declines the native request and explicitly stops the turn. Unstable plan operations are sent only when the client advertises `clientCapabilities.plan`; other clients receive the legacy `plan` update.
 
 ## Supported runtime
 

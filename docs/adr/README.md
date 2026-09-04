@@ -7,3 +7,4 @@
 * [7. ネイティブの権限・入力・資格情報の境界を保持する](0007-neiteibunoquan-xian-ru-li-zi-ge-qing-bao-nojing-jie-wobao-chi-suru.md)
 * [8. Linux上で全プラットフォーム向けアダプターのみをビルドする](0008-linuxshang-dequan-puratutohuomuxiang-keadaputanomiwobirudosuru.md)
 * [9. 明示指定された診断ログだけをファイルへ保存する](0009-明示指定された診断ログだけをファイルへ保存する.md)
+* [10. capability交渉付きACP plan operationsでZCodeのプラン承認を変換する](0010-capability交渉付きacp-plan-operationsでzcodeのプラン承認を変換する.md)

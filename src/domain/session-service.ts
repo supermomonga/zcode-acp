@@ -62,6 +62,10 @@ interface ActiveTurn {
   hostResponseDurationMs?: number;
   firstEventDurationMs?: number;
   cancelTimer?: ReturnType<typeof setTimeout>;
+  planProposal?: {
+    readonly planId: string;
+    readonly markdown: string;
+  };
 }
 
 interface SessionBinding {
@@ -71,6 +75,8 @@ interface SessionBinding {
   settings: SessionSettings;
   snapshot: SessionSnapshot;
   advertisedConfig: AdvertisedConfig;
+  todosPlanVisible: boolean;
+  legacyPlanVisible: boolean;
   active?: ActiveTurn;
 }
 
@@ -85,6 +91,15 @@ interface NativePermissionAnswer {
   readonly optionId: string;
   readonly response: PermissionResponse;
 }
+
+interface NativePlanApprovalOption {
+  readonly optionId: string;
+  readonly name: string;
+  readonly description?: string;
+}
+
+const TODOS_PLAN_ID = "zcode-todos";
+const PLAN_PROPOSAL_PREFIX = "zcode-plan-proposal:";
 
 export const MODE_OPTIONS = [
   { id: "build", name: "Ask before changes", description: "Ask before each file changes." },
@@ -437,9 +452,11 @@ export class HeadlessZCodeSessionEngine implements SessionEngine {
     }
     const completion = Promise.withResolvers<PromptResult>();
     const turnInteraction: SessionInteraction = {
+      planOperationsSupported: interaction.planOperationsSupported,
       notify: (sessionId, update) =>
         this.notifySessionUpdate(interaction, sessionId, update, inputId),
       requestPermission: (request) => interaction.requestPermission(request),
+      requestPlanApproval: (request) => interaction.requestPlanApproval(request),
       requestUserInput: (request) => interaction.requestUserInput(request),
     };
     const turn: ActiveTurn = {
@@ -508,6 +525,7 @@ export class HeadlessZCodeSessionEngine implements SessionEngine {
       this.logPromptCompleted(binding.sessionId, turn, "success", result.stopReason);
       return result;
     } catch (error) {
+      await this.removePlanProposal(binding, turn);
       settleTurn(turn, "reject", error);
       this.logPromptCompleted(binding.sessionId, turn, "error");
       throw error;
@@ -523,11 +541,15 @@ export class HeadlessZCodeSessionEngine implements SessionEngine {
     const turn = binding?.active;
     if (binding === undefined || turn === undefined || turn.cancelled) return;
     turn.cancelled = true;
-    await (await this.getBridge()).request(
-      "cancelGeneration",
-      { workspacePath: binding.workspacePath, sessionId: binding.sessionId },
-      UnknownResultSchema,
-    );
+    try {
+      await this.removePlanProposal(binding, turn);
+    } finally {
+      await (await this.getBridge()).request(
+        "cancelGeneration",
+        { workspacePath: binding.workspacePath, sessionId: binding.sessionId },
+        UnknownResultSchema,
+      );
+    }
     turn.cancelTimer = setTimeout(() => {
       settleTurn(
         turn,
@@ -541,6 +563,11 @@ export class HeadlessZCodeSessionEngine implements SessionEngine {
     for (const binding of this.sessions.values()) {
       if (binding.active !== undefined) {
         binding.active.cancelled = true;
+        try {
+          await this.removePlanProposal(binding, binding.active);
+        } catch (error) {
+          this.logger.error("acp.plan_cleanup.failed", error, { sessionId: binding.sessionId });
+        }
         settleTurn(binding.active, "resolve", { stopReason: "cancelled" });
       }
     }
@@ -636,6 +663,8 @@ export class HeadlessZCodeSessionEngine implements SessionEngine {
       settings: snapshot.settings,
       snapshot,
       advertisedConfig: advertisedConfig(snapshot.settings),
+      todosPlanVisible: false,
+      legacyPlanVisible: false,
     };
     this.sessions.set(binding.sessionId, binding);
     this.workspaceCommands.set(workspacePath, availableCommands(snapshot));
@@ -678,15 +707,34 @@ export class HeadlessZCodeSessionEngine implements SessionEngine {
         ...(usage.cost == null ? {} : { cost: usage.cost }),
       });
     }
-    if ((snapshot.todos?.length ?? 0) > 0) {
-      await interaction.notify(sessionId, {
-        sessionUpdate: "plan",
-        entries: snapshot.todos!.map((todo) => ({
-          content: todo.content,
-          status: todo.status,
-          priority: todo.priority,
-        })),
-      });
+    await this.notifyTodos(this.requireSession(sessionId), interaction, snapshot.todos ?? []);
+  }
+
+  private async notifyTodos(
+    binding: SessionBinding,
+    interaction: SessionInteraction,
+    todos: NonNullable<SessionSnapshot["todos"]>,
+  ): Promise<void> {
+    const entries = todoEntries(todos);
+    if (interaction.planOperationsSupported) {
+      if (entries.length > 0) {
+        await interaction.notify(binding.sessionId, {
+          sessionUpdate: "plan_update",
+          plan: { type: "items", planId: TODOS_PLAN_ID, entries },
+        });
+        binding.todosPlanVisible = true;
+      } else if (binding.todosPlanVisible) {
+        await interaction.notify(binding.sessionId, {
+          sessionUpdate: "plan_removed",
+          planId: TODOS_PLAN_ID,
+        });
+        binding.todosPlanVisible = false;
+      }
+      return;
+    }
+    if (entries.length > 0 || binding.legacyPlanVisible) {
+      await interaction.notify(binding.sessionId, { sessionUpdate: "plan", entries });
+      binding.legacyPlanVisible = entries.length > 0;
     }
   }
 
@@ -801,7 +849,17 @@ export class HeadlessZCodeSessionEngine implements SessionEngine {
       return;
     }
     if (dynamic.type === "userInput.request") {
-      await this.handleUserInput(binding, turn, dynamic.request);
+      try {
+        if (isPlanApprovalUserInput(dynamic.request)) {
+          await this.handleUserInputPlanApproval(binding, turn, dynamic.request);
+        } else {
+          await this.handleUserInput(binding, turn, dynamic.request);
+        }
+      } catch (error) {
+        if (turn === undefined) throw error;
+        settleTurn(turn, "reject", error);
+        void this.cancel({ sessionId: binding.sessionId });
+      }
       return;
     }
     if (turn === undefined) {
@@ -811,7 +869,11 @@ export class HeadlessZCodeSessionEngine implements SessionEngine {
 
     try {
       if (dynamic.type === "permission.request") {
-        await this.handlePermission(binding, turn, dynamic.request);
+        if (dynamic.request.toolName === "ExitPlanMode") {
+          await this.handlePermissionPlanApproval(binding, turn, dynamic.request);
+        } else {
+          await this.handlePermission(binding, turn, dynamic.request);
+        }
         return;
       }
       await this.handleSessionEvent(binding, turn, dynamic.event);
@@ -846,6 +908,110 @@ export class HeadlessZCodeSessionEngine implements SessionEngine {
       throw error;
     }
     await this.respondPermission(binding, request.requestId, answer);
+  }
+
+  private async handlePermissionPlanApproval(
+    binding: SessionBinding,
+    turn: ActiveTurn,
+    request: PermissionRequest,
+  ): Promise<void> {
+    let nativeResponseAttempted = false;
+    try {
+      const markdown = requirePlanMarkdown(request.input);
+      const options = planPermissionOptions(request);
+      const planId = `${PLAN_PROPOSAL_PREFIX}${request.requestId}`;
+      await this.publishPlanProposal(binding, turn, planId, markdown);
+      const result = await turn.interaction.requestPlanApproval({
+        sessionId: request.sessionId,
+        toolCallId: request.toolCallId,
+        message: request.reason || "Review this implementation plan.",
+        options,
+      });
+      if (result.action !== "accept") {
+        const answer = denyAnswer(request);
+        await this.removePlanProposal(binding, turn);
+        nativeResponseAttempted = true;
+        await this.respondPermission(binding, request.requestId, answer);
+        return;
+      }
+      const selected = request.options.find((option) => option.optionId === result.optionId);
+      if (selected === undefined) {
+        throw new AdapterError("NATIVE_PROTOCOL_ERROR", "Client selected an unknown plan option");
+      }
+      const answer = { optionId: selected.optionId, response: selected.response };
+      if (selected.response.decision === "allow") {
+        await this.markPlanProposalAccepted(binding, turn);
+      } else {
+        await this.removePlanProposal(binding, turn);
+      }
+      nativeResponseAttempted = true;
+      await this.respondPermission(binding, request.requestId, answer);
+    } catch (error) {
+      try {
+        if (!nativeResponseAttempted) {
+          nativeResponseAttempted = true;
+          await this.respondPermission(binding, request.requestId, denyAnswer(request));
+        }
+      } finally {
+        await this.removePlanProposal(binding, turn);
+      }
+      throw error;
+    }
+  }
+
+  private async handleUserInputPlanApproval(
+    binding: SessionBinding,
+    turn: ActiveTurn | undefined,
+    request: UserInputRequest,
+  ): Promise<void> {
+    if (turn === undefined) {
+      await this.respondUserInput(binding, request.requestId, {
+        action: "decline",
+        reason: "No active client can approve the plan",
+      });
+      return;
+    }
+    let nativeResponseAttempted = false;
+    try {
+      const markdown = requirePlanMarkdown(request.input);
+      const normalized = planUserInputOptions(request);
+      const planId = `${PLAN_PROPOSAL_PREFIX}${request.requestId}`;
+      await this.publishPlanProposal(binding, turn, planId, markdown);
+      const result = await turn.interaction.requestPlanApproval({
+        sessionId: request.sessionId,
+        ...(request.toolCallId === undefined ? {} : { toolCallId: request.toolCallId }),
+        message: request.prompt ?? normalized.question,
+        options: normalized.options,
+      });
+      if (result.action !== "accept") {
+        await this.removePlanProposal(binding, turn);
+        nativeResponseAttempted = true;
+        await this.respondUserInput(binding, request.requestId, { action: result.action });
+        return;
+      }
+      if (!normalized.options.some((option) => option.optionId === result.optionId)) {
+        throw new AdapterError("NATIVE_PROTOCOL_ERROR", "Client selected an unknown plan option");
+      }
+      await this.markPlanProposalAccepted(binding, turn);
+      nativeResponseAttempted = true;
+      await this.respondUserInput(binding, request.requestId, {
+        action: "accept",
+        content: structuredInputContent(normalized.question, result.optionId),
+      });
+    } catch (error) {
+      try {
+        if (!nativeResponseAttempted) {
+          nativeResponseAttempted = true;
+          await this.respondUserInput(binding, request.requestId, {
+            action: "decline",
+            reason: "Plan approval request failed",
+          });
+        }
+      } finally {
+        await this.removePlanProposal(binding, turn);
+      }
+      throw error;
+    }
   }
 
   private async handleUserInput(
@@ -887,6 +1053,68 @@ export class HeadlessZCodeSessionEngine implements SessionEngine {
         reason: "Structured input request failed",
       });
       throw error;
+    }
+  }
+
+  private async publishPlanProposal(
+    binding: SessionBinding,
+    turn: ActiveTurn,
+    planId: string,
+    markdown: string,
+  ): Promise<void> {
+    await this.removePlanProposal(binding, turn);
+    if (turn.interaction.planOperationsSupported) {
+      await turn.interaction.notify(binding.sessionId, {
+        sessionUpdate: "plan_update",
+        plan: { type: "markdown", planId, content: markdown },
+      });
+    } else {
+      await turn.interaction.notify(binding.sessionId, {
+        sessionUpdate: "plan",
+        entries: [{ content: markdown, priority: "high", status: "pending" }],
+      });
+      binding.legacyPlanVisible = true;
+    }
+    turn.planProposal = { planId, markdown };
+  }
+
+  private async markPlanProposalAccepted(
+    binding: SessionBinding,
+    turn: ActiveTurn,
+  ): Promise<void> {
+    const proposal = turn.planProposal;
+    if (proposal === undefined || turn.interaction.planOperationsSupported) return;
+    await turn.interaction.notify(binding.sessionId, {
+      sessionUpdate: "plan",
+      entries: [{
+        content: proposal.markdown,
+        priority: "high",
+        status: "in_progress",
+      }],
+    });
+    binding.legacyPlanVisible = true;
+  }
+
+  private async removePlanProposal(binding: SessionBinding, turn: ActiveTurn): Promise<void> {
+    const proposal = turn.planProposal;
+    if (proposal === undefined) return;
+    delete turn.planProposal;
+    if (turn.interaction.planOperationsSupported) {
+      await turn.interaction.notify(binding.sessionId, {
+        sessionUpdate: "plan_removed",
+        planId: proposal.planId,
+      });
+    } else {
+      await turn.interaction.notify(binding.sessionId, { sessionUpdate: "plan", entries: [] });
+      binding.legacyPlanVisible = false;
+    }
+  }
+
+  private async finishPlanProposal(binding: SessionBinding, turn: ActiveTurn): Promise<void> {
+    if (turn.interaction.planOperationsSupported) {
+      await this.removePlanProposal(binding, turn);
+    } else {
+      delete turn.planProposal;
     }
   }
 
@@ -984,6 +1212,7 @@ export class HeadlessZCodeSessionEngine implements SessionEngine {
       );
       updateBindingSnapshot(binding, snapshot);
       await this.notifySessionMetadata(turn.interaction, binding.sessionId, snapshot);
+      await this.finishPlanProposal(binding, turn);
       settleTurn(turn, "resolve", {
         stopReason: stopReason(event.payload, turn.cancelled),
         usage: usageResult,
@@ -1003,6 +1232,7 @@ export class HeadlessZCodeSessionEngine implements SessionEngine {
     }
     if (event.type === "turn.failed") {
       if (turn.cancelled) {
+        await this.removePlanProposal(binding, turn);
         settleTurn(turn, "resolve", { stopReason: "cancelled" });
         return;
       }
@@ -1396,6 +1626,89 @@ export function permissionKind(
     "INTERACTION_UNSUPPORTED",
     `Native permission decision cannot be represented in ACP v1: ${response.decision}`,
   );
+}
+
+function isPlanApprovalUserInput(request: UserInputRequest): boolean {
+  return asRecord(request.schema).interaction === "plan_approval";
+}
+
+function requirePlanMarkdown(input: unknown): string {
+  const plan = asRecord(input).plan;
+  if (typeof plan !== "string" || plan.trim().length === 0) {
+    throw new AdapterError("NATIVE_PROTOCOL_ERROR", "ZCode plan approval has no plan content");
+  }
+  return plan.trim();
+}
+
+function planPermissionOptions(request: PermissionRequest): NativePlanApprovalOption[] {
+  let hasAllow = false;
+  let hasDeny = false;
+  const options = request.options.map((option) => {
+    if (option.response.decision === "allow") hasAllow = true;
+    else if (option.response.decision === "deny") hasDeny = true;
+    else {
+      throw new AdapterError(
+        "NATIVE_PROTOCOL_ERROR",
+        `ZCode plan option has unsupported decision: ${option.response.decision}`,
+      );
+    }
+    return {
+      optionId: option.optionId,
+      name: option.name,
+      ...(option.description === undefined ? {} : { description: option.description }),
+    };
+  });
+  if (!hasAllow || !hasDeny) {
+    throw new AdapterError(
+      "NATIVE_PROTOCOL_ERROR",
+      "ZCode plan approval must provide both allow and deny options",
+    );
+  }
+  return options;
+}
+
+function planUserInputOptions(request: UserInputRequest): {
+  readonly question: string;
+  readonly options: NativePlanApprovalOption[];
+} {
+  if (request.questions?.length !== 1 || request.questions[0]?.multiSelect === true) {
+    throw new AdapterError(
+      "NATIVE_PROTOCOL_ERROR",
+      "ZCode plan approval must provide one single-select question",
+    );
+  }
+  const question = request.questions[0]!;
+  if (question.options.length === 0) {
+    throw new AdapterError("NATIVE_PROTOCOL_ERROR", "ZCode plan approval has no options");
+  }
+  return {
+    question: question.question,
+    options: question.options.map((option) => ({
+      optionId: option.value,
+      name: option.label,
+      ...(option.description === undefined ? {} : { description: option.description }),
+    })),
+  };
+}
+
+function structuredInputContent(question: string, optionId: string): Record<string, unknown> {
+  return {
+    answer_0: optionId,
+    answers: { [question]: [optionId] },
+    answer: optionId,
+  };
+}
+
+function todoEntries(todos: NonNullable<SessionSnapshot["todos"]>): Array<{
+  content: string;
+  status: "pending" | "in_progress" | "completed";
+  priority: "high" | "medium" | "low";
+}> {
+  return todos.map((todo) => ({
+    content: todo.content,
+    status: todo.status,
+    priority: todo.priority,
+  }));
 }
 
 function denyAnswer(request: PermissionRequest): NativePermissionAnswer {

@@ -3,6 +3,9 @@ number: 6
 title: ACP v1契約を固定し、将来のプロトコル版を分離する
 status: accepted
 date: 2026-09-02
+links:
+- target: 10
+  kind: relatesto
 ---
 
 # ACP v1契約を固定し、将来のプロトコル版を分離する

@@ -67,11 +67,15 @@ top-level eventは`snapshot`、`state.updated`、`permission.request`、`userInp
 
 ### Permission
 
-native optionの`optionId`、name、意味を保持してACPの選択肢へ一対一で写像します。ACP clientが返したIDが元optionに存在しなければ拒否します。cancel/error/disconnect時は実在するdeny optionを選び、option IDをexactly onceで返します。
+通常のtool permissionでは、native optionの`optionId`、name、意味を保持してACPの選択肢へ一対一で写像します。ACP clientが返したIDが元optionに存在しなければ拒否します。cancel/error/disconnect時は実在するdeny optionを選び、option IDをexactly onceで返します。`toolName === "ExitPlanMode"` はplan承認として分離します。
+
+### Plan approval
+
+`userInput.request` の `schema.interaction === "plan_approval"` または `permission.request` の `toolName === "ExitPlanMode"` をplan承認として扱います。どちらも `input.plan` のMarkdown本文をACPへ先に通知し、form `elicitation/create` の結果を元のnative応答methodへ返します。本文欠落や未知optionではallowを返しません。
 
 ### Structured user input
 
-form elicitation capabilityを持つACP clientには複数質問・multiple selectを保持して`elicitation/create`へ変換します。client応答は`action`と`content`へ平坦化して`respondElicitation`へ渡します。form非対応clientでは実際のdecline応答を返し、turnを`INTERACTION_UNSUPPORTED`で停止します。
+form elicitation capabilityを持つACP clientには複数質問・multiple selectを保持して`elicitation/create`へ変換します。client応答は`action`と`content`へ平坦化して`respondStructuredInput`へ渡します。form非対応clientでは実際のdecline応答を返し、turnを`INTERACTION_UNSUPPORTED`で停止します。
 
 ### Provider runtime headers
 

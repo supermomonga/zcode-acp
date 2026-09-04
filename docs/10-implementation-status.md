@@ -1,6 +1,6 @@
 # Implementation status
 
-最終更新: 2026-09-04
+最終更新: 2026-09-05
 
 設計判断は[ADR一覧](adr/README.md)、current contractと検証手順は[Testing and compatibility](08-testing-compatibility.md)を参照してください。この文書は実装済み機能と実行済み検証だけを記録します。
 
@@ -26,22 +26,25 @@
 - diagnostic-onlyなapp buildとmetadata raw SHA-256
 - current task protocolのcancel、structured input、permission変換
 - ACP v1 session、stream、tool、permission、input、cancel、config、MCP surface
+- ACP SDK 1.4.0 / 公式安定schema-v1.21.0
+- capability negotiation付きplan proposal・todos更新とform elicitationによるplan承認
 - macOS/Linux/Windows install layout
 - 5 target standalone build
 - Linux-only GitHub Actions CI
 
 ## Verification completed
 
-2026-09-04にlocal macOS arm64 / ZCode 3.11.2で次を確認しました。
+2026-09-05にlocal macOS arm64 / ZCode 3.11.2で次を確認しました。
 
 - `bun install --frozen-lockfile`
-- `bun run check`: 61 tests pass
+- `bun run check`: 89 tests pass
 - `doctor --json`: `hostArtifact`、`hostProtocol`、`supported`、CLI verified、runtime smoke pass
 - `bun run build`
 - `bun run release`: macOS arm64/x64、Linux arm64/x64、Windows x64、checksums、SBOM
 - official host initialize、workspace state、session create/list/read/resume
 - official host経由の実model応答とread tool event
 - ACP wireの4 mode（`build`、`edit`、`plan`、`yolo`）、mode切り替え通知、read tool、`end_turn`
+- plan modeでMarkdown proposal通知がform elicitationより先に届き、cancel後にproposalが削除され、一時workspaceが変更されないこと
 - write permission allow/denyと一時fileの作成/非作成
 - streaming中のcancelと`cancelled` terminal
 - form elicitationによるstructured input

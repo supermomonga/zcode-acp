@@ -92,9 +92,26 @@ export type UserInputResult =
   | { action: "accept"; content: Record<string, unknown> }
   | { action: "decline" | "cancel" };
 
+export interface PlanApprovalRequest {
+  sessionId: string;
+  toolCallId?: string;
+  message: string;
+  options: Array<{
+    optionId: string;
+    name: string;
+    description?: string;
+  }>;
+}
+
+export type PlanApprovalResult =
+  | { action: "accept"; optionId: string }
+  | { action: "decline" | "cancel" };
+
 export interface SessionInteraction {
+  readonly planOperationsSupported: boolean;
   notify(sessionId: string, update: SessionUpdate): Promise<void>;
   requestPermission(request: PermissionRequest): Promise<PermissionSelection | null>;
+  requestPlanApproval(request: PlanApprovalRequest): Promise<PlanApprovalResult>;
   requestUserInput(request: UserInputRequest): Promise<UserInputResult>;
 }
 

@@ -639,11 +639,15 @@ async function createModeHarness(createMode = "build"): Promise<ModeHarness> {
   const service = new HeadlessZCodeSessionEngine(new NullLogger());
   Reflect.set(service, "bridgePromise", Promise.resolve(bridge));
   const interaction: SessionInteraction = {
+    planOperationsSupported: false,
     async notify(_sessionId, update) {
       updates.push(update);
     },
     async requestPermission() {
       return null;
+    },
+    async requestPlanApproval() {
+      return { action: "decline" };
     },
     async requestUserInput() {
       return { action: "decline" };
@@ -755,11 +759,15 @@ async function createConfigHarness(initialSettings: SessionSettings): Promise<Co
   const service = new HeadlessZCodeSessionEngine(new NullLogger());
   Reflect.set(service, "bridgePromise", Promise.resolve(bridge));
   const interaction: SessionInteraction = {
+    planOperationsSupported: false,
     async notify(_sessionId, update) {
       updates.push(update);
     },
     async requestPermission() {
       return null;
+    },
+    async requestPlanApproval() {
+      return { action: "decline" };
     },
     async requestUserInput() {
       return { action: "decline" };
@@ -898,6 +906,7 @@ async function createToolLifecycleHarness(options: {
   const updates: SessionUpdate[] = [];
   let firstMetadataNotification = true;
   const interaction: SessionInteraction = {
+    planOperationsSupported: false,
     async notify(_sessionId, update) {
       updates.push(update);
       if (firstMetadataNotification && options.firstMetadataGate !== undefined) {
@@ -908,6 +917,9 @@ async function createToolLifecycleHarness(options: {
     },
     async requestPermission() {
       return null;
+    },
+    async requestPlanApproval() {
+      return { action: "decline" };
     },
     async requestUserInput() {
       return { action: "decline" };

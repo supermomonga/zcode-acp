@@ -43,7 +43,9 @@ hashは調査artifactの同一性を確認するもので、配布元の署名�
 - [ACP v1 prompt turn](https://agentclientprotocol.com/protocol/v1/prompt-turn)
 - [ACP v1 cancellation](https://agentclientprotocol.com/protocol/v1/cancellation)
 - [ACP v1 authentication](https://agentclientprotocol.com/protocol/v1/authentication)
-- [schema-v1.19.0 release](https://github.com/agentclientprotocol/agent-client-protocol/releases/tag/schema-v1.19.0)
+- [ACP TypeScript SDK v1.4.0](https://github.com/agentclientprotocol/typescript-sdk/releases/tag/v1.4.0)
+- [schema-v1.21.0 release](https://github.com/agentclientprotocol/agent-client-protocol/releases/tag/schema-v1.21.0)
+- [Plan Operations RFD](https://github.com/agentclientprotocol/agent-client-protocol/blob/main/docs/rfds/plan-operations.mdx)
 
 ## 3. Structural references and clients
 

@@ -6,6 +6,8 @@ date: 2026-09-02
 links:
 - target: 9
   kind: amendedby
+- target: 10
+  kind: relatesto
 ---
 
 # ネイティブの権限・入力・資格情報の境界を保持する

@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readNdjson } from "../src/zcode/protocol/ndjson.ts";
@@ -19,10 +19,12 @@ if (process.env.ZCODE_ACP_ENABLE_CONTRACT_PROBE !== "1") {
 }
 
 const workspace = await mkdtemp(join(tmpdir(), "zcode-acp-wire-probe-"));
-await writeFile(join(workspace, "package.json"), `${JSON.stringify({
+const fixtureContent = `${JSON.stringify({
   name: "zcode-acp-probe-fixture",
   private: true,
-}, null, 2)}\n`);
+}, null, 2)}\n`;
+const fixturePath = join(workspace, "package.json");
+await writeFile(fixturePath, fixtureContent);
 
 const executable = process.env.ZCODE_ACP_PROBE_EXECUTABLE;
 const probeCwd = process.env.ZCODE_ACP_PROBE_CWD ?? import.meta.dir.replace(/\/scripts$/, "");
@@ -53,7 +55,10 @@ try {
     jsonrpc: "2.0",
     id: 1,
     method: "initialize",
-    params: { protocolVersion: 1, clientCapabilities: {} },
+    params: {
+      protocolVersion: 1,
+      clientCapabilities: { plan: {}, elicitation: { form: {} } },
+    },
   });
   const initialized = await next();
   if (initialized.id !== 1 || typeof initialized.result !== "object") {
@@ -80,7 +85,7 @@ try {
     throw new Error(`ACP session/new returned unexpected modes: ${JSON.stringify(created)}`);
   }
 
-  for (const [index, modeId] of ["edit", "plan", "yolo", "build"].entries()) {
+  for (const [index, modeId] of ["edit", "yolo", "build", "plan"].entries()) {
     const requestId = 10 + index;
     await write({
       jsonrpc: "2.0",
@@ -111,6 +116,95 @@ try {
     if (!notified) {
       throw new Error(`ACP session/set_mode did not publish mode ${modeId}`);
     }
+  }
+
+  await write({
+    jsonrpc: "2.0",
+    id: 20,
+    method: "session/prompt",
+    params: {
+      sessionId,
+      prompt: [{
+        type: "text",
+        text: "Inspect package.json and propose an implementation plan to add a scripts.probe field. Do not modify any file. When the plan is ready, request plan approval with ExitPlanMode.",
+      }],
+    },
+  });
+
+  let planMarkdown = "";
+  let planUpdateOrder = -1;
+  let elicitationOrder = -1;
+  let planRemoved = false;
+  let planFrameOrder = 0;
+  let planPromptResponse: Record<string, unknown> | undefined;
+  while (planPromptResponse === undefined) {
+    const frame = await next();
+    planFrameOrder += 1;
+    if (frame.method === "session/update") {
+      const params = frame.params as { update?: Record<string, unknown> };
+      const update = params.update;
+      if (update?.sessionUpdate === "plan_update") {
+        const plan = update.plan as Record<string, unknown> | undefined;
+        if (plan?.type === "markdown" && typeof plan.content === "string") {
+          planMarkdown = plan.content;
+          planUpdateOrder = planFrameOrder;
+        }
+      }
+      if (
+        update?.sessionUpdate === "plan_removed" &&
+        typeof update.planId === "string" &&
+        update.planId.startsWith("zcode-plan-proposal:")
+      ) {
+        planRemoved = true;
+      }
+      continue;
+    }
+    if (frame.method === "elicitation/create") {
+      elicitationOrder = planFrameOrder;
+      await write({ jsonrpc: "2.0", id: frame.id, result: { action: "cancel" } });
+      continue;
+    }
+    if (frame.method === "session/request_permission") {
+      await write({
+        jsonrpc: "2.0",
+        id: frame.id,
+        result: { outcome: { outcome: "cancelled" } },
+      });
+      continue;
+    }
+    if (frame.id === 20) {
+      planPromptResponse = frame;
+      continue;
+    }
+    throw new Error(`Unexpected ACP frame during plan probe: ${JSON.stringify(frame)}`);
+  }
+  if (
+    planMarkdown.length === 0 ||
+    planUpdateOrder < 0 ||
+    elicitationOrder <= planUpdateOrder ||
+    !planRemoved ||
+    (await readFile(fixturePath, "utf8")) !== fixtureContent
+  ) {
+    throw new Error(JSON.stringify({
+      planMarkdownLength: planMarkdown.length,
+      planUpdateOrder,
+      elicitationOrder,
+      planRemoved,
+      planPromptResponse,
+    }));
+  }
+
+  await write({
+    jsonrpc: "2.0",
+    id: 21,
+    method: "session/set_mode",
+    params: { sessionId, modeId: "build" },
+  });
+  while (true) {
+    const frame = await next();
+    if (frame.method === "session/update") continue;
+    if (frame.id === 21 && frame.result !== undefined) break;
+    throw new Error(`Unexpected ACP frame while restoring build mode: ${JSON.stringify(frame)}`);
   }
 
   await write({
@@ -175,6 +269,13 @@ try {
     stopReason,
     toolCreated,
     toolCompleted,
+    planApproval: {
+      markdownLength: planMarkdown.length,
+      updateBeforeElicitation: elicitationOrder > planUpdateOrder,
+      cancelled: true,
+      removed: planRemoved,
+      workspaceUnchanged: true,
+    },
     modes: OFFICIAL_MODES.map((mode) => mode.id),
     text,
   })}\n`);
