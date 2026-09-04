@@ -1,6 +1,6 @@
 {
   "name": "zcode-acp",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "ACP v1 adapter for the installed ZCode runtime",
   "type": "module",
   "private": true,
