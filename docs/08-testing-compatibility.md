@@ -45,6 +45,7 @@
 - cancelを`stopGeneration({taskId})`へ変換する
 - structured inputを平坦な`action`/`content`で`respondElicitation`へ渡す
 - permissionは検証済み`optionId`を`respondPermission`へ渡す
+- headless hostの`browser-execute-request`へ`backend_unavailable`を即時に返し、request payloadを応答へ複製しない
 - 旧response objectやnested responseを受理しない
 
 ### Public diagnostics

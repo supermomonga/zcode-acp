@@ -41,6 +41,34 @@ Object.defineProperty(process, "parentPort", { value: electronParentPort, config
 await import(workerData.hostIndexUrl);
 `;
 
+export const HEADLESS_BROWSER_MESSAGE_HANDLER_SOURCE = String.raw`
+worker.on("message", message => {
+  if (
+    message?.type !== "browser-execute-request" ||
+    typeof message.requestId !== "string" ||
+    message.requestId.length === 0
+  ) {
+    return;
+  }
+  worker.postMessage({
+    data: {
+      type: "browser-execute-result",
+      requestId: message.requestId,
+      result: {
+        ok: false,
+        error: {
+          code: "backend_unavailable",
+          message: "Browser control is unavailable in zcode-acp headless mode",
+          sideEffect: "none"
+        },
+        elapsedMs: 0
+      }
+    },
+    ports: []
+  });
+});
+`;
+
 export const ZCODE_HOST_BRIDGE_SOURCE = String.raw`
 import { MessageChannel, Worker } from "node:worker_threads";
 import { pathToFileURL } from "node:url";
@@ -65,6 +93,7 @@ const worker = new Worker(new URL("data:text/javascript," + encodeURIComponent(w
 });
 worker.stdout.resume();
 worker.stderr.resume();
+${HEADLESS_BROWSER_MESSAGE_HANDLER_SOURCE}
 
 const rpc = await import(pathToFileURL(hostRpcModule).href);
 const ports = new MessageChannel();

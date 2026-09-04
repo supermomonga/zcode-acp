@@ -40,6 +40,8 @@ artifactの更新とprotocol意味論の更新を別々のdescriptorで表しま
 
 bridgeのsuccess responseは、公式methodが`undefined`を返す場合も`result: null`を明示します。公式hostのstdout/stderrはACP stdoutへ流しません。
 
+公式hostはprompt送信前にparent processへ`browser-execute-request`を送り、desktop browserの状態を取得します。headless bridgeにはbrowser backendがないため、同じrequest IDの`browser-execute-result`で`backend_unavailable`を即時に返します。request payloadを転送・保存せず、公式hostの30秒timeoutを待って同じ結果へ到達することを避けます。PaseoなどACP clientが`session/new`で渡すMCP serverと、このZCode内部のbrowser IPCは別の経路です。
+
 ## 4. Internal envelope
 
 ```json
