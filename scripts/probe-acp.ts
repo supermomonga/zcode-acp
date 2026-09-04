@@ -3,6 +3,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readNdjson } from "../src/zcode/protocol/ndjson.ts";
 
+const OFFICIAL_MODES = [
+  { id: "build", name: "Ask before changes", description: "Ask before each file changes." },
+  {
+    id: "edit",
+    name: "Edit automatically",
+    description: "Edit selected files or relevant workspace files automatically.",
+  },
+  { id: "plan", name: "Plan mode", description: "Inspect the code and present a plan before editing." },
+  { id: "yolo", name: "Full access", description: "Edit and run commands with fewer confirmations." },
+];
+
 if (process.env.ZCODE_ACP_ENABLE_CONTRACT_PROBE !== "1") {
   throw new Error("Set ZCODE_ACP_ENABLE_CONTRACT_PROBE=1 to run the ACP probe");
 }
@@ -56,9 +67,50 @@ try {
     params: { cwd: workspace, mcpServers: [] },
   });
   const created = await next();
-  const sessionId = (created.result as { sessionId?: unknown } | undefined)?.sessionId;
+  const createdResult = created.result as {
+    sessionId?: unknown;
+    modes?: unknown;
+  } | undefined;
+  const sessionId = createdResult?.sessionId;
   if (typeof sessionId !== "string") {
     throw new Error(`ACP session/new failed: ${JSON.stringify(created)}`);
+  }
+  const expectedModes = { currentModeId: "build", availableModes: OFFICIAL_MODES };
+  if (JSON.stringify(createdResult?.modes) !== JSON.stringify(expectedModes)) {
+    throw new Error(`ACP session/new returned unexpected modes: ${JSON.stringify(created)}`);
+  }
+
+  for (const [index, modeId] of ["edit", "plan", "yolo", "build"].entries()) {
+    const requestId = 10 + index;
+    await write({
+      jsonrpc: "2.0",
+      id: requestId,
+      method: "session/set_mode",
+      params: { sessionId, modeId },
+    });
+    let notified = false;
+    while (true) {
+      const frame = await next();
+      if (frame.method === "session/update") {
+        const params = frame.params as {
+          sessionId?: unknown;
+          update?: Record<string, unknown>;
+        };
+        if (
+          params.sessionId === sessionId &&
+          params.update?.sessionUpdate === "current_mode_update" &&
+          params.update.currentModeId === modeId
+        ) {
+          notified = true;
+          continue;
+        }
+      }
+      if (frame.id === requestId && frame.result !== undefined) break;
+      throw new Error(`Unexpected ACP frame while setting mode: ${JSON.stringify(frame)}`);
+    }
+    if (!notified) {
+      throw new Error(`ACP session/set_mode did not publish mode ${modeId}`);
+    }
   }
 
   await write({
@@ -123,6 +175,7 @@ try {
     stopReason,
     toolCreated,
     toolCompleted,
+    modes: OFFICIAL_MODES.map((mode) => mode.id),
     text,
   })}\n`);
   await child.stdin.end();
