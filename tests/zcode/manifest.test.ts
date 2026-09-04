@@ -7,7 +7,7 @@ import {
 import type { RuntimeIdentity } from "../../src/zcode/discovery/types.ts";
 
 const OFFICIAL_CLI_SHA256 =
-  "3597160465b67da248fa3fb919920ca30d4e093003a4d70cde2a2e33903cbabc";
+  "e9f1868c0fdb863537ed910ee3828b9be96b8c2fd805473f63b439e1113266b8";
 
 function identity(
   platform: string,
@@ -15,8 +15,8 @@ function identity(
 ): RuntimeIdentity {
   return {
     platform,
-    appVersion: "3.10.2",
-    appBuild: "3.10.2.6414",
+    appVersion: "3.11.2",
+    appBuild: "3.11.2.6792",
     cliVersion: "0.16.5",
     cliSha256: OFFICIAL_CLI_SHA256,
     metadataSha256: `metadata-${platform}`,
@@ -37,7 +37,7 @@ describe("ZCode compatibility manifest", () => {
         status: "supported",
         cliIntegrity: "verified",
         expectedCliSha256: OFFICIAL_CLI_SHA256,
-        hostArtifact: { id: "zcode-host-3.10.2" },
+        hostArtifact: { id: "zcode-host-3.11.2" },
         hostProtocol: { id: "zcode-task-v1" },
       });
     }
@@ -60,14 +60,14 @@ describe("ZCode compatibility manifest", () => {
         status: "supported",
         cliIntegrity: "modified",
         expectedCliSha256: OFFICIAL_CLI_SHA256,
-        hostArtifact: { id: "zcode-host-3.10.2" },
+        hostArtifact: { id: "zcode-host-3.11.2" },
       });
   });
 
   test("rejects old, future, or unknown CLI versions", () => {
-    expect(assessCompatibility(identity("darwin-arm64", { appVersion: "0.0.0" })).status)
+    expect(assessCompatibility(identity("darwin-arm64", { appVersion: "3.10.2" })).status)
       .toBe("unsupported");
-    expect(assessCompatibility(identity("darwin-arm64", { appVersion: "3.10.3" })).status)
+    expect(assessCompatibility(identity("darwin-arm64", { appVersion: "3.11.3" })).status)
       .toBe("unsupported");
     expect(assessCompatibility(identity("darwin-arm64", { cliVersion: "0.16.6" })).status)
       .toBe("unsupported");

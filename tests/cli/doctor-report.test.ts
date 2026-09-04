@@ -19,7 +19,7 @@ describe("doctor report", () => {
       },
       identity: {
         platform: "linux-x64",
-        appVersion: "3.10.2",
+        appVersion: "3.11.2",
         cliVersion: "0.16.5",
         cliSha256: CURRENT_ZCODE_ARTIFACT.cliSha256,
         metadataSha256: "metadata-hash",
@@ -54,7 +54,7 @@ describe("doctor report", () => {
     });
 
     expect(report).toMatchObject({
-      hostArtifact: "zcode-host-3.10.2",
+      hostArtifact: "zcode-host-3.11.2",
       hostProtocol: "zcode-task-v1",
       compatibility: "supported",
     });

@@ -1,6 +1,6 @@
 # zcode-acp 設計・実装資料
 
-最終更新: 2026-09-02
+最終更新: 2026-09-04
 
 このディレクトリには、ZCodeのエージェント機能をACP v1へ公開する`zcode-acp`のArchitecture Decision Records（ADR）、現行仕様、運用手順、検証結果を格納します。設計を選んだ理由はADR、現在のwire shapeや実測値は各仕様書を正とします。
 
@@ -36,7 +36,7 @@ flowchart LR
 
 | ZCode | CLI | Host artifact | Host protocol |
 | --- | --- | --- | --- |
-| 3.10.2 | 0.16.5 | `zcode-host-3.10.2` | `zcode-task-v1` |
+| 3.11.2 | 0.16.5 | `zcode-host-3.11.2` | `zcode-task-v1` |
 
 同一versionのCLIとhost内容はOS間で同一と扱います。OS差はinstall layoutとmetadata platformの照合だけに限定し、実行済み検証と未実施項目は[Implementation status](10-implementation-status.md)に分離して記録します。
 

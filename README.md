@@ -33,7 +33,7 @@ Only the latest verified ZCode release is supported. Updating the manifest repla
 
 | ZCode | CLI | Host artifact | Host protocol |
 | --- | --- | --- | --- |
-| 3.10.2 | 0.16.5 | `zcode-host-3.10.2` | `zcode-task-v1` |
+| 3.11.2 | 0.16.5 | `zcode-host-3.11.2` | `zcode-task-v1` |
 
 The same ZCode version resolves to this single artifact and protocol on macOS, Linux, and Windows. Operating-system-specific code is limited to locating the installed files and requiring the metadata platform to exactly match the running OS and architecture.
 

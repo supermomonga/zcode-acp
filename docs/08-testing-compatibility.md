@@ -4,7 +4,7 @@
 
 ## 1. 方針
 
-現在のmanifestはZCode 3.10.2 / CLI 0.16.5だけを表し、新versionを採用するときはこのentryとfixturesを置換します。過去versionのentryは残しません。
+現在のmanifestはZCode 3.11.2 / CLI 0.16.5だけを表し、新versionを採用するときはこのentryとfixturesを置換します。過去versionのentryは残しません。
 
 同一ZCode versionのCLIとhost内容は全OSで同一と扱います。OS別version entryやinstaller比較testは作らず、OS差はlayout解決とmetadata/process platform一致だけをtestします。
 
@@ -12,11 +12,11 @@
 
 | Field | Value |
 | --- | --- |
-| ZCode | `3.10.2` |
+| ZCode | `3.11.2` |
 | CLI | `0.16.5` |
-| CLI SHA-256 | `3597160465b67da248fa3fb919920ca30d4e093003a4d70cde2a2e33903cbabc` |
-| Host artifact | `zcode-host-3.10.2` |
-| Host index SHA-256 | `72e57751ed5563338335a52cd688c7fba0707ef72d8ce782356b1f0b39c77462` |
+| CLI SHA-256 | `e9f1868c0fdb863537ed910ee3828b9be96b8c2fd805473f63b439e1113266b8` |
+| Host artifact | `zcode-host-3.11.2` |
+| Host index SHA-256 | `30911a90dadc5c384959d00d95ccc70c8cf38c74a9cb99c3168b0897d046d215` |
 | RPC module | `out/host/chunk-KGXW6KHC.js` |
 | RPC SHA-256 | `e66203598b60d8728260ad7631f295f9d6deb8276b06e8f0cab8776773c75b31` |
 | Required exports | `g`、`i`、`j` |
@@ -55,7 +55,7 @@
 
 ## 4. Local runtime verification
 
-release前に現在のmacOS ZCode 3.10.2で次を実行します。既存credentialの内容は表示・コピーしません。
+release前に現在のmacOS ZCode 3.11.2で次を実行します。既存credentialの内容は表示・コピーしません。
 
 1. frozen dependency install
 2. `bun run check`

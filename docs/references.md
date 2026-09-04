@@ -4,11 +4,11 @@
 
 ## 1. Current ZCode artifact
 
-調査日: 2026-09-01
+調査日: 2026-09-04
 
 ```text
-ZCode app: 3.10.2
-Observed macOS build: 3.10.2.6414
+ZCode app: 3.11.2
+Observed macOS build: 3.11.2.6792
 ZCode CLI: 0.16.5
 platform: darwin-arm64
 runtime: electron-node
@@ -26,9 +26,9 @@ runtime: electron-node
 Current fingerprints:
 
 ```text
-3597160465b67da248fa3fb919920ca30d4e093003a4d70cde2a2e33903cbabc  zcode.cjs
+e9f1868c0fdb863537ed910ee3828b9be96b8c2fd805473f63b439e1113266b8  zcode.cjs
 3cb76cfe74da2c647e077cbd35a0868034769ca04212f5ef8ac87fccb8ba4660  .node-bundle-meta.json (diagnostic only)
-72e57751ed5563338335a52cd688c7fba0707ef72d8ce782356b1f0b39c77462  out/host/index.js
+30911a90dadc5c384959d00d95ccc70c8cf38c74a9cb99c3168b0897d046d215  out/host/index.js
 e66203598b60d8728260ad7631f295f9d6deb8276b06e8f0cab8776773c75b31  out/host/chunk-KGXW6KHC.js
 ```
 
