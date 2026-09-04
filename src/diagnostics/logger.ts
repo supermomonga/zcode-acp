@@ -1,3 +1,13 @@
+import {
+  closeSync,
+  constants,
+  fchmodSync,
+  fstatSync,
+  openSync,
+  statSync,
+  writeSync,
+} from "node:fs";
+import { dirname, isAbsolute } from "node:path";
 import { redactValue, safeError } from "./redaction.ts";
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
@@ -8,7 +18,16 @@ export interface Logger {
 }
 
 export class StderrLogger implements Logger {
-  constructor(private readonly minimumLevel: LogLevel = "info") {}
+  private fileDescriptor: number | undefined;
+
+  constructor(
+    private readonly minimumLevel: LogLevel = "info",
+    filePath?: string,
+  ) {
+    if (filePath !== undefined) {
+      this.fileDescriptor = openLogFile(filePath);
+    }
+  }
 
   log(level: LogLevel, event: string, data: Record<string, unknown> = {}): void {
     if (LEVELS[level] < LEVELS[this.minimumLevel]) {
@@ -20,12 +39,37 @@ export class StderrLogger implements Logger {
       level,
       event,
       ...data,
+      pid: process.pid,
     });
-    process.stderr.write(`${JSON.stringify(record)}\n`);
+    const line = `${JSON.stringify(record)}\n`;
+    process.stderr.write(line);
+    if (this.fileDescriptor !== undefined) {
+      try {
+        const written = writeSync(this.fileDescriptor, line);
+        if (written !== Buffer.byteLength(line)) {
+          throw new Error("partial write");
+        }
+      } catch {
+        throw new Error("Failed to write ZCODE_ACP_LOG_FILE");
+      }
+    }
   }
 
   error(event: string, error: unknown, data: Record<string, unknown> = {}): void {
     this.log("error", event, { ...data, error: safeError(error) });
+  }
+
+  close(): void {
+    if (this.fileDescriptor === undefined) {
+      return;
+    }
+    const fileDescriptor = this.fileDescriptor;
+    this.fileDescriptor = undefined;
+    try {
+      closeSync(fileDescriptor);
+    } catch {
+      throw new Error("Failed to close ZCODE_ACP_LOG_FILE");
+    }
   }
 }
 
@@ -41,3 +85,38 @@ const LEVELS: Record<LogLevel, number> = {
   error: 40,
 };
 
+function openLogFile(filePath: string): number {
+  if (!isAbsolute(filePath)) {
+    throw new Error("ZCODE_ACP_LOG_FILE must be an absolute path");
+  }
+
+  try {
+    if (!statSync(dirname(filePath)).isDirectory()) {
+      throw new Error("not a directory");
+    }
+  } catch {
+    throw new Error("ZCODE_ACP_LOG_FILE parent directory does not exist or is not a directory");
+  }
+
+  let fileDescriptor: number;
+  try {
+    fileDescriptor = openSync(
+      filePath,
+      constants.O_APPEND | constants.O_CREAT | constants.O_WRONLY,
+      0o600,
+    );
+  } catch {
+    throw new Error("ZCODE_ACP_LOG_FILE cannot be opened for writing");
+  }
+
+  try {
+    if (!fstatSync(fileDescriptor).isFile()) {
+      throw new Error("not a regular file");
+    }
+    fchmodSync(fileDescriptor, 0o600);
+    return fileDescriptor;
+  } catch {
+    closeSync(fileDescriptor);
+    throw new Error("ZCODE_ACP_LOG_FILE must be a writable regular file");
+  }
+}

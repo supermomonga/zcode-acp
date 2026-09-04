@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { realpath } from "node:fs/promises";
-import { NullLogger } from "../../src/diagnostics/logger.ts";
+import {
+  NullLogger,
+  type LogLevel,
+  type Logger,
+} from "../../src/diagnostics/logger.ts";
 import type { SessionInteraction, SessionUpdate } from "../../src/domain/session-contract.ts";
 import {
   HeadlessZCodeSessionEngine,
@@ -335,6 +339,60 @@ describe("HeadlessZCodeSessionService", () => {
       }
     }
   });
+
+  test("attributes delayed ACP updates, host acceptance, and the first event to one input", async () => {
+    const metadataStarted = Promise.withResolvers<void>();
+    const releaseMetadata = Promise.withResolvers<void>();
+    const harness = await createToolLifecycleHarness({
+      firstMetadataGate: { started: metadataStarted.resolve, wait: releaseMetadata.promise },
+    });
+    try {
+      const prompt = harness.startPrompt();
+      await metadataStarted.promise;
+
+      expect(harness.logger.events("acp.session_prompt.started")).toHaveLength(1);
+      expect(harness.logger.events("acp.session_update.started")).toHaveLength(1);
+      expect(harness.logger.events("acp.session_update.completed")).toHaveLength(0);
+      expect(harness.logger.events("zcode.host_request.started")).toHaveLength(0);
+
+      await Bun.sleep(10);
+      releaseMetadata.resolve();
+      await harness.promptAccepted;
+      await Bun.sleep(0);
+      expect(harness.logger.events("acp.session_update.completed")).toHaveLength(4);
+      expect(harness.logger.events("zcode.host_request.started")).toHaveLength(1);
+      expect(harness.logger.events("zcode.host_request.completed")).toHaveLength(1);
+      expect(Number(
+        harness.logger.events("acp.session_update.completed")[0]?.data.durationMs,
+      )).toBeGreaterThanOrEqual(5);
+
+      await Bun.sleep(10);
+      await harness.completeTurn();
+      await expect(prompt).resolves.toMatchObject({ stopReason: "end_turn" });
+
+      const firstEvent = harness.logger.events("zcode.event.first_received");
+      const completed = harness.logger.events("acp.session_prompt.completed");
+      expect(firstEvent).toHaveLength(1);
+      expect(completed).toHaveLength(1);
+      expect(completed[0]).toMatchObject({
+        level: "info",
+        data: {
+          outcome: "success",
+          stopReason: "end_turn",
+        },
+      });
+      expect(Number(completed[0]?.data.metadataDurationMs)).toBeGreaterThanOrEqual(5);
+      expect(Number(completed[0]?.data.firstEventDurationMs)).toBeGreaterThanOrEqual(5);
+
+      const inputIds = harness.logger.records
+        .filter((record) => "inputId" in record.data)
+        .map((record) => record.data.inputId);
+      expect(new Set(inputIds).size).toBe(1);
+      expect(JSON.stringify(harness.logger.records)).not.toContain("PROMPT_MUST_NOT_BE_LOGGED");
+    } finally {
+      await harness.service.close();
+    }
+  });
 });
 
 interface ModeHarness {
@@ -452,12 +510,15 @@ interface ToolLifecycleHarness {
   readonly updates: SessionUpdate[];
   readonly requests: string[];
   readonly promptAccepted: Promise<void>;
+  readonly logger: CaptureLogger;
   startPrompt(): Promise<unknown>;
   emitTool(kind: string, payload?: Record<string, unknown>): Promise<void>;
   completeTurn(): Promise<void>;
 }
 
-async function createToolLifecycleHarness(): Promise<ToolLifecycleHarness> {
+async function createToolLifecycleHarness(options: {
+  firstMetadataGate?: { readonly started: () => void; readonly wait: Promise<void> };
+} = {}): Promise<ToolLifecycleHarness> {
   const workspacePath = await realpath(process.cwd());
   const settings = lifecycleSettings();
   const snapshot: SessionSnapshot = {
@@ -514,13 +575,20 @@ async function createToolLifecycleHarness(): Promise<ToolLifecycleHarness> {
     },
     async close() {},
   };
-  const service = new HeadlessZCodeSessionEngine(new NullLogger());
+  const logger = new CaptureLogger();
+  const service = new HeadlessZCodeSessionEngine(logger);
   Reflect.set(service, "bridgePromise", Promise.resolve(bridge));
   await service.newSession({ cwd: workspacePath, mcpServers: [] });
   const updates: SessionUpdate[] = [];
+  let firstMetadataNotification = true;
   const interaction: SessionInteraction = {
     async notify(_sessionId, update) {
       updates.push(update);
+      if (firstMetadataNotification && options.firstMetadataGate !== undefined) {
+        firstMetadataNotification = false;
+        options.firstMetadataGate.started();
+        await options.firstMetadataGate.wait;
+      }
     },
     async requestPermission() {
       return null;
@@ -552,9 +620,13 @@ async function createToolLifecycleHarness(): Promise<ToolLifecycleHarness> {
     service,
     updates,
     requests,
+    logger,
     promptAccepted: promptAccepted.promise,
     startPrompt: () => service.prompt(
-      { sessionId: "session-1", prompt: [{ type: "text", text: "run" }] },
+      {
+        sessionId: "session-1",
+        prompt: [{ type: "text", text: "PROMPT_MUST_NOT_BE_LOGGED" }],
+      },
       interaction,
       new AbortController().signal,
     ),
@@ -595,4 +667,20 @@ function toolUpdates(updates: SessionUpdate[]): SessionUpdate[] {
   return updates.filter((update) =>
     update.sessionUpdate === "tool_call" || update.sessionUpdate === "tool_call_update"
   );
+}
+
+class CaptureLogger implements Logger {
+  readonly records: Array<{ level: LogLevel; event: string; data: Record<string, unknown> }> = [];
+
+  log(level: LogLevel, event: string, data: Record<string, unknown> = {}): void {
+    this.records.push({ level, event, data });
+  }
+
+  error(event: string, error: unknown, data: Record<string, unknown> = {}): void {
+    this.log("error", event, { ...data, error });
+  }
+
+  events(event: string): typeof this.records {
+    return this.records.filter((record) => record.event === event);
+  }
 }

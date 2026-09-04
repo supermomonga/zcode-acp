@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
-import { NullLogger } from "../../src/diagnostics/logger.ts";
+import { NullLogger, type LogLevel, type Logger } from "../../src/diagnostics/logger.ts";
 import {
   ZCodeProtocolClient,
   type NativeTransport,
@@ -67,7 +67,69 @@ describe("ZCode private protocol client", () => {
     await handled.promise;
     await client.close();
   });
+
+  test("records native stdio write timing without logging request contents", async () => {
+    const harness = transportHarness();
+    const writeStarted = Promise.withResolvers<void>();
+    const releaseWrite = Promise.withResolvers<void>();
+    const logger = new CaptureLogger();
+    const transport: NativeTransport = {
+      readable: harness.transport.readable,
+      async write(frame) {
+        writeStarted.resolve();
+        await releaseWrite.promise;
+        harness.writes.push(frame);
+      },
+      close: () => harness.transport.close(),
+    };
+    const client = new ZCodeProtocolClient(transport, logger);
+
+    const response = client.request(
+      "__call",
+      { content: "PROMPT_MUST_NOT_BE_LOGGED" },
+      z.object({ accepted: z.literal(true) }).strict(),
+      1_000,
+      { operation: "sendPrompt", sessionId: "session-1", inputId: "input-1" },
+    );
+    await writeStarted.promise;
+    expect(logger.events("zcode.native_request.write.started")).toHaveLength(1);
+    expect(logger.events("zcode.native_request.write.completed")).toHaveLength(0);
+
+    await Bun.sleep(10);
+    releaseWrite.resolve();
+    await Bun.sleep(0);
+    const completed = logger.events("zcode.native_request.write.completed");
+    expect(completed).toHaveLength(1);
+    expect(completed[0]?.data).toMatchObject({
+      operation: "sendPrompt",
+      sessionId: "session-1",
+      inputId: "input-1",
+      nativeRequestId: 1,
+    });
+    expect(Number(completed[0]?.data.durationMs)).toBeGreaterThanOrEqual(5);
+    expect(JSON.stringify(logger.records)).not.toContain("PROMPT_MUST_NOT_BE_LOGGED");
+
+    await harness.send({ id: 1, result: { accepted: true } });
+    await expect(response).resolves.toEqual({ accepted: true });
+    await client.close();
+  });
 });
+
+class CaptureLogger implements Logger {
+  readonly records: Array<{ level: LogLevel; event: string; data: Record<string, unknown> }> = [];
+
+  log(level: LogLevel, event: string, data: Record<string, unknown> = {}): void {
+    this.records.push({ level, event, data });
+  }
+
+  error(event: string, error: unknown, data: Record<string, unknown> = {}): void {
+    this.log("error", event, { ...data, error });
+  }
+
+  events(event: string): typeof this.records {
+    return this.records.filter((record) => record.event === event);
+  }
+}
 
 function transportHarness(): {
   transport: NativeTransport;

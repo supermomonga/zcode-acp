@@ -123,7 +123,9 @@ ZCodeツール自体がworkspace外へアクセスできるかはmode/permission
 
 ## 9. Logging policy
 
-Default logに含めてよいもの:
+既定では構造化logをstderrだけへ出し、永続fileを作りません。`ZCODE_ACP_LOG_FILE`に絶対pathを明示した場合だけ、stderrと同じredaction済みJSONL recordを追記します。fileは`0600`でopenし、1 recordを1回の同期writeで保存します。相対path、存在しない親directory、open・write失敗は設定エラーとして停止し、別のpathへfallbackしません。stdoutは常にACP JSON-RPC専用です。
+
+Logに含めてよいもの:
 
 - timestamp
 - severity
@@ -133,8 +135,9 @@ Default logに含めてよいもの:
 - method/event type
 - duration、exit code
 - error category
+- adapter process `pid`
 
-Default logに含めないもの:
+Log levelに関係なく含めないもの:
 
 - prompt/response text
 - tool arguments/output
@@ -142,7 +145,9 @@ Default logに含めないもの:
 - credential/header
 - full absolute home path。必要ならworkspace hashまたはbasename
 
-debug protocol traceを将来提供する場合、明示opt-in、保存先、retention、redaction、警告を必須にします。stdoutへtraceを混ぜません。
+`ZCODE_ACP_LOG_LEVEL=debug`ではACP `session/update`、ZCode host request、native stdio write、最初のZCode eventの時刻と所要時間を追加しますが、protocol payloadは記録しません。`sessionId`、promptごとの`inputId`、内部request ID、method/event typeだけを相関情報として使用します。
+
+File loggingは短期間の診断用途です。adapterはrotationや削除を行わないため、保存期間、保管場所、共有範囲、診断後の削除は利用者が管理します。診断後は`ZCODE_ACP_LOG_FILE`とdebug levelの設定を外します。この判断は[ADR 0009](adr/0009-明示指定された診断ログだけをファイルへ保存する.md)に記録します。
 
 ## 10. Supply-chain and compatibility
 

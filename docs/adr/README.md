@@ -6,3 +6,4 @@
 * [6. ACP v1契約を固定し、将来のプロトコル版を分離する](0006-acp-v1qi-yue-wogu-ding-si-jiang-lai-nopurotokoruban-wofen-li-suru.md)
 * [7. ネイティブの権限・入力・資格情報の境界を保持する](0007-neiteibunoquan-xian-ru-li-zi-ge-qing-bao-nojing-jie-wobao-chi-suru.md)
 * [8. Linux上で全プラットフォーム向けアダプターのみをビルドする](0008-linuxshang-dequan-puratutohuomuxiang-keadaputanomiwobirudosuru.md)
+* [9. 明示指定された診断ログだけをファイルへ保存する](0009-明示指定された診断ログだけをファイルへ保存する.md)

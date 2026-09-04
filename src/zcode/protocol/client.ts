@@ -18,6 +18,12 @@ export interface NativeTransport {
 export type ReverseRequestHandler = (request: NativeRequest) => Promise<unknown>;
 export type NotificationHandler = (notification: NativeNotification) => Promise<void> | void;
 
+export interface NativeRequestDiagnosticContext {
+  readonly operation: string;
+  readonly sessionId?: string;
+  readonly inputId?: string;
+}
+
 interface PendingRequest {
   readonly method: string;
   readonly parse: (value: unknown) => unknown;
@@ -53,6 +59,7 @@ export class ZCodeProtocolClient {
     params: unknown,
     resultSchema: Schema,
     timeoutMs = 30_000,
+    diagnosticContext?: NativeRequestDiagnosticContext,
   ): Promise<z.output<Schema>> {
     if (this.closed) {
       throw new AdapterError("NATIVE_EXITED", "Native protocol transport is closed");
@@ -81,9 +88,30 @@ export class ZCodeProtocolClient {
       });
     });
 
+    const writeStartedAt = performance.now();
+    if (diagnosticContext !== undefined) {
+      this.logger.log("debug", "zcode.native_request.write.started", {
+        ...diagnosticContext,
+        nativeRequestId: id,
+      });
+    }
     try {
       await this.transport.write(`${JSON.stringify({ id, method, params })}\n`);
+      if (diagnosticContext !== undefined) {
+        this.logger.log("debug", "zcode.native_request.write.completed", {
+          ...diagnosticContext,
+          nativeRequestId: id,
+          durationMs: elapsedMs(writeStartedAt),
+        });
+      }
     } catch (error) {
+      if (diagnosticContext !== undefined) {
+        this.logger.error("zcode.native_request.write.failed", error, {
+          ...diagnosticContext,
+          nativeRequestId: id,
+          durationMs: elapsedMs(writeStartedAt),
+        });
+      }
       const pending = this.pending.get(key);
       if (pending !== undefined) {
         clearTimeout(pending.timer);
@@ -192,4 +220,8 @@ export class ZCodeProtocolClient {
     }
     this.pending.clear();
   }
+}
+
+function elapsedMs(startedAt: number): number {
+  return Math.round((performance.now() - startedAt) * 1_000) / 1_000;
 }

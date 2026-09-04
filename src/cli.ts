@@ -21,8 +21,15 @@ async function main(argv: readonly string[]): Promise<number> {
   };
 
   if (args.command === "agent") {
-    const logger = new StderrLogger(process.env.ZCODE_ACP_LOG_LEVEL === "debug" ? "debug" : "info");
-    await serveAcpStdio(HeadlessZCodeSessionService.create(logger, discoveryOptions), logger);
+    const logger = new StderrLogger(
+      process.env.ZCODE_ACP_LOG_LEVEL === "debug" ? "debug" : "info",
+      process.env.ZCODE_ACP_LOG_FILE,
+    );
+    try {
+      await serveAcpStdio(HeadlessZCodeSessionService.create(logger, discoveryOptions), logger);
+    } finally {
+      logger.close();
+    }
     return 0;
   }
 
@@ -79,6 +86,8 @@ async function main(argv: readonly string[]): Promise<number> {
 try {
   process.exitCode = await main(process.argv.slice(2));
 } catch (error) {
-  process.stderr.write(`${JSON.stringify({ event: "zcode-acp.failed", error: safeError(error) })}\n`);
+  process.stderr.write(
+    `${JSON.stringify({ event: "zcode-acp.failed", error: safeError(error), pid: process.pid })}\n`,
+  );
   process.exitCode = 1;
 }

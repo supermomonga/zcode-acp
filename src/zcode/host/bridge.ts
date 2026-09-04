@@ -81,10 +81,10 @@ export class ZCodeHostBridge {
       logger,
       runtime,
     );
-    logger.log("info", "zcode.host.started", { pid: child.pid });
+    logger.log("info", "zcode.host.started", { hostPid: child.pid });
     void child.exited.then((exitCode) => {
       logger.log(exitCode === 0 ? "info" : "error", "zcode.host.exited", {
-        pid: child.pid,
+        hostPid: child.pid,
         exitCode,
       });
     });
@@ -96,6 +96,7 @@ export class ZCodeHostBridge {
     params: unknown,
     resultSchema: Schema,
     timeoutMs = 30_000,
+    diagnosticContext?: { readonly sessionId: string; readonly inputId: string },
   ): Promise<z.output<Schema>> {
     const contract = this.runtime.resolvedHost;
     if (contract === undefined) {
@@ -107,6 +108,9 @@ export class ZCodeHostBridge {
       { service: adapted.service, method: adapted.method, params: adapted.params },
       resultSchema,
       timeoutMs,
+      diagnosticContext === undefined
+        ? undefined
+        : { operation: method, ...diagnosticContext },
     );
   }
 

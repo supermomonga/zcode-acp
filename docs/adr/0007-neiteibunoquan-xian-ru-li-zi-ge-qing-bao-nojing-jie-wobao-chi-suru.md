@@ -3,6 +3,9 @@ number: 7
 title: ネイティブの権限・入力・資格情報の境界を保持する
 status: accepted
 date: 2026-09-02
+links:
+- target: 9
+  kind: amendedby
 ---
 
 # ネイティブの権限・入力・資格情報の境界を保持する

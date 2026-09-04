@@ -21,6 +21,7 @@ import type {
   SessionMode,
   SessionSetup,
   SessionState,
+  SessionUpdate,
 } from "./session-contract.ts";
 import { ZCodeHostBridge, type HostSubscription } from "../zcode/host/bridge.ts";
 import {
@@ -49,12 +50,17 @@ interface ToolState {
 }
 
 interface ActiveTurn {
+  readonly inputId: string;
+  readonly startedAt: number;
   readonly interaction: SessionInteraction;
   readonly resolve: (response: PromptResult) => void;
   readonly reject: (error: unknown) => void;
   readonly tools: Map<string, ToolState>;
   cancelled: boolean;
   settled: boolean;
+  metadataDurationMs?: number;
+  hostResponseDurationMs?: number;
+  firstEventDurationMs?: number;
   cancelTimer?: ReturnType<typeof setTimeout>;
 }
 
@@ -398,10 +404,35 @@ export class HeadlessZCodeSessionEngine implements SessionEngine {
       throw new AdapterError("SESSION_BUSY", "A prompt is already active for this session");
     }
 
-    const prompt = nativePrompt(params.prompt);
+    const inputId = crypto.randomUUID();
+    const startedAt = performance.now();
+    this.logger.log("info", "acp.session_prompt.started", {
+      sessionId: binding.sessionId,
+      inputId,
+    });
+    let prompt: ReturnType<typeof nativePrompt>;
+    try {
+      prompt = nativePrompt(params.prompt);
+    } catch (error) {
+      this.logger.log("info", "acp.session_prompt.completed", {
+        sessionId: binding.sessionId,
+        inputId,
+        outcome: "error",
+        totalDurationMs: elapsedMs(startedAt),
+      });
+      throw error;
+    }
     const completion = Promise.withResolvers<PromptResult>();
+    const turnInteraction: SessionInteraction = {
+      notify: (sessionId, update) =>
+        this.notifySessionUpdate(interaction, sessionId, update, inputId),
+      requestPermission: (request) => interaction.requestPermission(request),
+      requestUserInput: (request) => interaction.requestUserInput(request),
+    };
     const turn: ActiveTurn = {
-      interaction,
+      inputId,
+      startedAt,
+      interaction: turnInteraction,
       resolve: completion.resolve,
       reject: completion.reject,
       tools: new Map(),
@@ -413,22 +444,59 @@ export class HeadlessZCodeSessionEngine implements SessionEngine {
     signal.addEventListener("abort", abort, { once: true });
 
     try {
-      await this.notifySessionMetadata(interaction, binding.sessionId, binding.snapshot);
-      await (await this.getBridge()).request(
-        "sendPrompt",
-        {
-          workspacePath: binding.workspacePath,
+      const metadataStartedAt = performance.now();
+      try {
+        await this.notifySessionMetadata(turnInteraction, binding.sessionId, binding.snapshot);
+      } finally {
+        turn.metadataDurationMs = elapsedMs(metadataStartedAt);
+      }
+
+      const hostStartedAt = performance.now();
+      this.logger.log("debug", "zcode.host_request.started", {
+        sessionId: binding.sessionId,
+        inputId,
+        operation: "sendPrompt",
+      });
+      try {
+        await (await this.getBridge()).request(
+          "sendPrompt",
+          {
+            workspacePath: binding.workspacePath,
+            sessionId: binding.sessionId,
+            inputId,
+            content: prompt.content,
+            attachments: prompt.attachments,
+          },
+          SendPromptResultSchema,
+          60_000,
+          { sessionId: binding.sessionId, inputId },
+        );
+        turn.hostResponseDurationMs = elapsedMs(hostStartedAt);
+        this.logger.log("debug", "zcode.host_request.completed", {
           sessionId: binding.sessionId,
-          inputId: crypto.randomUUID(),
-          content: prompt.content,
-          attachments: prompt.attachments,
-        },
-        SendPromptResultSchema,
-        60_000,
-      );
-      return await completion.promise;
+          inputId,
+          operation: "sendPrompt",
+          outcome: "success",
+          durationMs: turn.hostResponseDurationMs,
+        });
+      } catch (error) {
+        turn.hostResponseDurationMs = elapsedMs(hostStartedAt);
+        this.logger.log("debug", "zcode.host_request.completed", {
+          sessionId: binding.sessionId,
+          inputId,
+          operation: "sendPrompt",
+          outcome: "error",
+          durationMs: turn.hostResponseDurationMs,
+        });
+        throw error;
+      }
+
+      const result = await completion.promise;
+      this.logPromptCompleted(binding.sessionId, turn, "success", result.stopReason);
+      return result;
     } catch (error) {
       settleTurn(turn, "reject", error);
+      this.logPromptCompleted(binding.sessionId, turn, "error");
       throw error;
     } finally {
       signal.removeEventListener("abort", abort);
@@ -606,6 +674,60 @@ export class HeadlessZCodeSessionEngine implements SessionEngine {
     }
   }
 
+  private async notifySessionUpdate(
+    interaction: SessionInteraction,
+    sessionId: string,
+    update: SessionUpdate,
+    inputId: string,
+  ): Promise<void> {
+    const startedAt = performance.now();
+    const data = {
+      sessionId,
+      inputId,
+      updateType: update.sessionUpdate,
+    };
+    this.logger.log("debug", "acp.session_update.started", data);
+    try {
+      await interaction.notify(sessionId, update);
+      this.logger.log("debug", "acp.session_update.completed", {
+        ...data,
+        outcome: "success",
+        durationMs: elapsedMs(startedAt),
+      });
+    } catch (error) {
+      this.logger.log("debug", "acp.session_update.completed", {
+        ...data,
+        outcome: "error",
+        durationMs: elapsedMs(startedAt),
+      });
+      throw error;
+    }
+  }
+
+  private logPromptCompleted(
+    sessionId: string,
+    turn: ActiveTurn,
+    outcome: "success" | "error",
+    stopReason?: PromptResult["stopReason"],
+  ): void {
+    this.logger.log("info", "acp.session_prompt.completed", {
+      sessionId,
+      inputId: turn.inputId,
+      outcome,
+      ...(stopReason === undefined ? {} : { stopReason }),
+      totalDurationMs: elapsedMs(turn.startedAt),
+      ...(turn.metadataDurationMs === undefined
+        ? {}
+        : { metadataDurationMs: turn.metadataDurationMs }),
+      ...(turn.hostResponseDurationMs === undefined
+        ? {}
+        : { hostResponseDurationMs: turn.hostResponseDurationMs }),
+      ...(turn.firstEventDurationMs === undefined
+        ? {}
+        : { firstEventDurationMs: turn.firstEventDurationMs }),
+    });
+  }
+
   private requireSession(sessionId: string): SessionBinding {
     const binding = this.sessions.get(sessionId);
     if (binding === undefined) {
@@ -629,6 +751,15 @@ export class HeadlessZCodeSessionEngine implements SessionEngine {
 
   private async handleDynamicEvent(binding: SessionBinding, dynamic: DynamicEvent): Promise<void> {
     const turn = binding.active;
+    if (turn !== undefined && turn.firstEventDurationMs === undefined) {
+      turn.firstEventDurationMs = elapsedMs(turn.startedAt);
+      this.logger.log("debug", "zcode.event.first_received", {
+        sessionId: binding.sessionId,
+        inputId: turn.inputId,
+        eventType: dynamic.type,
+        durationMs: turn.firstEventDurationMs,
+      });
+    }
     if (dynamic.type === "snapshot") {
       updateBindingSnapshot(binding, dynamic.snapshot);
       if (turn !== undefined) {
@@ -1349,4 +1480,8 @@ function parseJson(value: string): unknown {
   } catch {
     return value;
   }
+}
+
+function elapsedMs(startedAt: number): number {
+  return Math.round((performance.now() - startedAt) * 1_000) / 1_000;
 }

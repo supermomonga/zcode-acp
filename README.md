@@ -93,11 +93,37 @@ npx acpx@latest \
   "Reply with exactly OK"
 ```
 
+## Diagnostic logging
+
+Diagnostics are JSON Lines written to stderr. Set `ZCODE_ACP_LOG_LEVEL=debug` to include individual ACP notification and native stdio write timings. To retain the same redacted records for investigating a slow ACP client session, set `ZCODE_ACP_LOG_FILE` to an absolute file path. For example, a Paseo Custom Provider can be configured as follows:
+
+```json
+{
+  "agents": {
+    "providers": {
+      "zcode-acp": {
+        "extends": "acp",
+        "label": "ZCode ACP",
+        "command": ["/absolute/path/to/zcode-acp-darwin-arm64"],
+        "env": {
+          "ZCODE_ACP_LOG_LEVEL": "debug",
+          "ZCODE_ACP_LOG_FILE": "/absolute/path/to/zcode-acp-diagnostics.jsonl"
+        }
+      }
+    }
+  }
+}
+```
+
+Each JSONL record contains a timestamp, severity, event name, adapter process `pid`, and event-specific correlation IDs and durations. `acp.session_prompt.started` and `acp.session_prompt.completed` summarize a prompt; debug records distinguish ACP `session/update`, ZCode host acceptance, native stdio writing, and the first received ZCode event. Prompt and response text, tool input and output, environment values, credentials, and headers are not recorded.
+
+The log path must be absolute and its parent directory must already exist. The adapter opens the file in append mode, enforces permissions `0600`, and fails explicitly if it cannot open or write the file. It does not rotate or delete the file. Remove `ZCODE_ACP_LOG_FILE` and `ZCODE_ACP_LOG_LEVEL=debug` after diagnosis, then delete the diagnostic file according to your retention requirements.
+
 On Linux, install the official package normally and sign in to ZCode as the Linux user that will run the adapter. When migrating state from another operating system, credentials can only be decrypted if ZCode's `ZCODE_CREDENTIAL_SECRET` has the same value on the source and destination systems. `zcode-acp` does not copy, decrypt, or transform credentials.
 
 ## Privacy and terms
 
-The installed ZCode runtime handles model/provider communication, telemetry, and authentication, so ZCode's privacy policy and terms apply. By default, `zcode-acp` does not persist prompt content, credentials, or provider runtime headers in logs. Review the logging policy of the ACP client you use separately.
+The installed ZCode runtime handles model/provider communication, telemetry, and authentication, so ZCode's privacy policy and terms apply. By default, `zcode-acp` does not create a persistent log file and does not include prompt content, credentials, or provider runtime headers in diagnostics. File logging is enabled only by explicitly setting `ZCODE_ACP_LOG_FILE`. Review the logging policy of the ACP client you use separately.
 
 ZCode itself is not included in this project or its release artifacts. Users must obtain and install ZCode separately from its official distribution source.
 
