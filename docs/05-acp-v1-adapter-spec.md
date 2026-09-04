@@ -137,6 +137,17 @@ native ZCode session IDをACP session IDとして返し、load/resumeでも同�
 
 ZCodeが返すmode/model一覧をACP responseへ入れる場合は、pinned v1 schemaに存在する正式fieldだけを使います。未検証の情報を `_meta` で必須UXにしません。
 
+mode IDはZCode 3.11.2の利用者向けカタログと同じ値を変換せずに使用します。
+
+| ID | Name | Description |
+| --- | --- | --- |
+| `build` | Ask before changes | Ask before each file changes. |
+| `edit` | Edit automatically | Edit selected files or relevant workspace files automatically. |
+| `plan` | Plan mode | Inspect the code and present a plan before editing. |
+| `yolo` | Full access | Edit and run commands with fewer confirmations. |
+
+`session/set_mode`はこの4 IDだけをnative `setMode`へそのまま渡します。native snapshotの現在modeがこのカタログに含まれない場合はprotocol不整合として拒否し、別のmodeへ変換しません。private schemaに残る旧modeをACPの選択肢として公開しません。
+
 ## 6. `session/prompt`
 
 ### 6.1 Accepted input

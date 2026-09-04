@@ -2,14 +2,156 @@ import { describe, expect, test } from "bun:test";
 import { realpath } from "node:fs/promises";
 import { NullLogger } from "../../src/diagnostics/logger.ts";
 import type { SessionInteraction, SessionUpdate } from "../../src/domain/session-contract.ts";
-import { HeadlessZCodeSessionEngine } from "../../src/domain/session-service.ts";
+import {
+  HeadlessZCodeSessionEngine,
+  MODE_OPTIONS,
+} from "../../src/domain/session-service.ts";
 import type {
   DynamicEvent,
   SessionSettings,
   SessionSnapshot,
 } from "../../src/zcode/protocol/v1/host-schemas.ts";
 
+const OFFICIAL_MODE_OPTIONS = [
+  { id: "build", name: "Ask before changes", description: "Ask before each file changes." },
+  {
+    id: "edit",
+    name: "Edit automatically",
+    description: "Edit selected files or relevant workspace files automatically.",
+  },
+  { id: "plan", name: "Plan mode", description: "Inspect the code and present a plan before editing." },
+  { id: "yolo", name: "Full access", description: "Edit and run commands with fewer confirmations." },
+] as const;
+
 describe("HeadlessZCodeSessionService", () => {
+  test("publishes the exact ZCode mode IDs and labels for new and restored sessions", async () => {
+    expect(MODE_OPTIONS).toEqual(OFFICIAL_MODE_OPTIONS);
+    const harness = await createModeHarness();
+    try {
+      const created = await harness.service.newSession({
+        cwd: harness.workspacePath,
+        mcpServers: [],
+      });
+      expect(created.modes).toEqual({
+        currentModeId: "build",
+        availableModes: OFFICIAL_MODE_OPTIONS.map((mode) => ({ ...mode })),
+      });
+
+      const loaded = await harness.service.loadSession(
+        { cwd: harness.workspacePath, sessionId: "session-1", mcpServers: [] },
+        harness.interaction,
+      );
+      expect(loaded.modes).toEqual(created.modes);
+
+      const resumed = await harness.service.resumeSession({
+        cwd: harness.workspacePath,
+        sessionId: "session-1",
+      });
+      expect(resumed.modes).toEqual(created.modes);
+    } finally {
+      await harness.service.close();
+    }
+  });
+
+  test("passes each published ZCode mode ID to the host unchanged", async () => {
+    const harness = await createModeHarness();
+    try {
+      await harness.service.newSession({ cwd: harness.workspacePath, mcpServers: [] });
+      for (const mode of OFFICIAL_MODE_OPTIONS) {
+        harness.updates.length = 0;
+        await harness.service.setSessionMode(
+          { sessionId: "session-1", modeId: mode.id },
+          harness.interaction,
+        );
+        expect(harness.requests.at(-1)).toEqual({
+          method: "setMode",
+          params: {
+            workspacePath: harness.workspacePath,
+            sessionId: "session-1",
+            mode: mode.id,
+          },
+        });
+        expect(harness.updates).toEqual([{
+          sessionUpdate: "current_mode_update",
+          currentModeId: mode.id,
+        }]);
+      }
+
+      harness.setResponseMode("setMode", "edit");
+      harness.updates.length = 0;
+      await harness.service.setSessionMode(
+        { sessionId: "session-1", modeId: "yolo" },
+        harness.interaction,
+      );
+      expect(harness.requests.at(-1)).toMatchObject({ params: { mode: "yolo" } });
+      expect(harness.updates).toEqual([{
+        sessionUpdate: "current_mode_update",
+        currentModeId: "edit",
+      }]);
+    } finally {
+      await harness.service.close();
+    }
+  });
+
+  test("rejects any mode outside the published catalog before calling the host", async () => {
+    const harness = await createModeHarness();
+    try {
+      await harness.service.newSession({ cwd: harness.workspacePath, mcpServers: [] });
+      const requestCount = harness.requests.length;
+      for (const modeId of ["auto", "future-mode"]) {
+        await expect(harness.service.setSessionMode({ sessionId: "session-1", modeId }))
+          .rejects.toMatchObject({
+            code: "INVALID_CONFIGURATION",
+            message: `Unknown ZCode mode: ${modeId}`,
+          });
+      }
+      expect(harness.requests).toHaveLength(requestCount);
+    } finally {
+      await harness.service.close();
+    }
+  });
+
+  test("rejects native modes outside the published catalog without changing session state", async () => {
+    const invalidCreate = await createModeHarness("future-mode");
+    try {
+      await expect(invalidCreate.service.newSession({
+        cwd: invalidCreate.workspacePath,
+        mcpServers: [],
+      })).rejects.toMatchObject({
+        code: "NATIVE_PROTOCOL_ERROR",
+        message: "ZCode returned a mode outside the published catalog: future-mode",
+      });
+    } finally {
+      await invalidCreate.service.close();
+    }
+
+    const harness = await createModeHarness();
+    try {
+      await harness.service.newSession({ cwd: harness.workspacePath, mcpServers: [] });
+
+      harness.setResponseMode("resumeSession", "future-mode");
+      await expect(harness.service.resumeSession({
+        cwd: harness.workspacePath,
+        sessionId: "session-1",
+      })).rejects.toMatchObject({ code: "NATIVE_PROTOCOL_ERROR" });
+      expect(boundMode(harness.service)).toBe("build");
+
+      harness.setResponseMode("setMode", "future-mode");
+      await expect(harness.service.setSessionMode(
+        { sessionId: "session-1", modeId: "yolo" },
+        harness.interaction,
+      )).rejects.toMatchObject({ code: "NATIVE_PROTOCOL_ERROR" });
+      expect(boundMode(harness.service)).toBe("build");
+      expect(harness.updates).toHaveLength(0);
+
+      await expect(harness.emitSnapshot("future-mode"))
+        .rejects.toMatchObject({ code: "NATIVE_PROTOCOL_ERROR" });
+      expect(boundMode(harness.service)).toBe("build");
+    } finally {
+      await harness.service.close();
+    }
+  });
+
   test("uses model IDs for ACP display names like the official ZCode GUI", async () => {
     const workspacePath = await realpath(process.cwd());
     const settings = {
@@ -194,6 +336,116 @@ describe("HeadlessZCodeSessionService", () => {
     }
   });
 });
+
+interface ModeHarness {
+  readonly service: HeadlessZCodeSessionEngine;
+  readonly workspacePath: string;
+  readonly requests: Array<{ method: string; params: unknown }>;
+  readonly updates: SessionUpdate[];
+  readonly interaction: SessionInteraction;
+  setResponseMode(method: string, mode: string): void;
+  emitSnapshot(mode: string): Promise<void>;
+}
+
+async function createModeHarness(createMode = "build"): Promise<ModeHarness> {
+  const workspacePath = await realpath(process.cwd());
+  const requests: Array<{ method: string; params: unknown }> = [];
+  const updates: SessionUpdate[] = [];
+  const responseModes = new Map<string, string>();
+  let currentMode = "build";
+  let subscription: ((event: DynamicEvent) => Promise<void> | void) | undefined;
+
+  const snapshot = (mode: string): SessionSnapshot => ({
+    session: {
+      sessionId: "session-1",
+      status: "idle",
+      workspace: { workspacePath },
+    },
+    settings: modeSettings(mode),
+    messages: [],
+    runtime: {},
+    slashCommands: [],
+  });
+  const bridge = {
+    async request(method: string, params: unknown) {
+      requests.push({ method, params });
+      if (method === "initialize") return { available: true };
+      if (method === "readWorkspaceState") {
+        return {
+          workspace: { workspacePath },
+          settings: modeSettings(currentMode),
+          modelCatalog: { providers: [{}], available: [] },
+        };
+      }
+      if (method === "createSession") return snapshot(createMode);
+      if (method === "resumeSession" || method === "readSession") {
+        return snapshot(responseModes.get(method) ?? currentMode);
+      }
+      if (method === "setMode") {
+        const requested = (params as { mode: string }).mode;
+        const returned = responseModes.get(method) ?? requested;
+        if (returned === requested) currentMode = requested;
+        return snapshot(returned);
+      }
+      throw new Error(`Unexpected request: ${method}`);
+    },
+    async subscribe(
+      _target: unknown,
+      handler: (event: DynamicEvent) => Promise<void> | void,
+    ) {
+      subscription = handler;
+      return { async dispose() {} };
+    },
+    async close() {},
+  };
+  const service = new HeadlessZCodeSessionEngine(new NullLogger());
+  Reflect.set(service, "bridgePromise", Promise.resolve(bridge));
+  const interaction: SessionInteraction = {
+    async notify(_sessionId, update) {
+      updates.push(update);
+    },
+    async requestPermission() {
+      return null;
+    },
+    async requestUserInput() {
+      return { action: "decline" };
+    },
+  };
+
+  return {
+    service,
+    workspacePath,
+    requests,
+    updates,
+    interaction,
+    setResponseMode(method, mode) {
+      responseModes.set(method, mode);
+    },
+    async emitSnapshot(mode) {
+      if (subscription === undefined) throw new Error("Subscription was not established");
+      await subscription({ type: "snapshot", snapshot: snapshot(mode) });
+    },
+  };
+}
+
+function modeSettings(mode: string): SessionSettings {
+  return {
+    model: {
+      current: { providerId: "builtin:zai-coding-plan", modelId: "GLM-5.2" },
+      available: [],
+    },
+    thoughtLevel: { enabled: false, available: [] },
+    mode: { current: mode },
+  };
+}
+
+function boundMode(service: HeadlessZCodeSessionEngine): string | undefined {
+  const sessions = Reflect.get(service, "sessions") as Map<
+    string,
+    { settings: SessionSettings }
+  >;
+  return sessions.get("session-1")?.settings.mode.current;
+}
 
 interface ToolLifecycleHarness {
   readonly service: HeadlessZCodeSessionEngine;

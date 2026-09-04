@@ -35,13 +35,13 @@
 2026-09-04にlocal macOS arm64 / ZCode 3.11.2で次を確認しました。
 
 - `bun install --frozen-lockfile`
-- `bun run check`: 57 tests pass
+- `bun run check`: 61 tests pass
 - `doctor --json`: `hostArtifact`、`hostProtocol`、`supported`、CLI verified、runtime smoke pass
 - `bun run build`
 - `bun run release`: macOS arm64/x64、Linux arm64/x64、Windows x64、checksums、SBOM
 - official host initialize、workspace state、session create/list/read/resume
 - official host経由の実model応答とread tool event
-- ACP wireのread toolと`end_turn`
+- ACP wireの4 mode（`build`、`edit`、`plan`、`yolo`）、mode切り替え通知、read tool、`end_turn`
 - write permission allow/denyと一時fileの作成/非作成
 - streaming中のcancelと`cancelled` terminal
 - form elicitationによるstructured input

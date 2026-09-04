@@ -72,13 +72,18 @@ interface NativePermissionAnswer {
   readonly response: PermissionResponse;
 }
 
-export const MODE_OPTIONS: SessionMode[] = [
-  { id: "build", name: "Build", description: "標準の確認付き実装モード" },
-  { id: "edit", name: "Edit", description: "編集中心の権限制御モード" },
-  { id: "plan", name: "Plan", description: "読み取りと計画を中心にしたモード" },
-  { id: "auto", name: "Auto", description: "ZCodeが操作ごとに権限処理を選択するモード" },
-  { id: "yolo", name: "YOLO", description: "高権限モード。ツール操作を自動承認します" },
-];
+export const MODE_OPTIONS = [
+  { id: "build", name: "Ask before changes", description: "Ask before each file changes." },
+  {
+    id: "edit",
+    name: "Edit automatically",
+    description: "Edit selected files or relevant workspace files automatically.",
+  },
+  { id: "plan", name: "Plan mode", description: "Inspect the code and present a plan before editing." },
+  { id: "yolo", name: "Full access", description: "Edit and run commands with fewer confirmations." },
+] as const satisfies readonly SessionMode[];
+
+type ZCodeModeId = (typeof MODE_OPTIONS)[number]["id"];
 
 const MODEL_CONFIG_ID = "zcode.model";
 const THOUGHT_CONFIG_ID = "zcode.thought_level";
@@ -284,7 +289,7 @@ export class HeadlessZCodeSessionEngine implements SessionEngine {
     params: { sessionId: string; modeId: string },
     interaction?: SessionInteraction,
   ): Promise<void> {
-    if (!MODE_OPTIONS.some((mode) => mode.id === params.modeId)) {
+    if (!isZCodeModeId(params.modeId)) {
       throw new AdapterError("INVALID_CONFIGURATION", `Unknown ZCode mode: ${params.modeId}`);
     }
     const binding = this.requireSession(params.sessionId);
@@ -294,12 +299,11 @@ export class HeadlessZCodeSessionEngine implements SessionEngine {
       SessionSnapshotSchema,
       60_000,
     );
-    binding.settings = snapshot.settings;
-    binding.snapshot = snapshot;
+    const currentModeId = updateBindingSnapshot(binding, snapshot);
     if (interaction !== undefined) {
       await interaction.notify(binding.sessionId, {
         sessionUpdate: "current_mode_update",
-        currentModeId: params.modeId,
+        currentModeId,
       });
     }
   }
@@ -327,8 +331,7 @@ export class HeadlessZCodeSessionEngine implements SessionEngine {
         SessionSnapshotSchema,
         60_000,
       );
-      binding.settings = snapshot.settings;
-      binding.snapshot = snapshot;
+      updateBindingSnapshot(binding, snapshot);
     } else if (params.configId === THOUGHT_CONFIG_ID && !("type" in params)) {
       if (!binding.settings.thoughtLevel.available.some((option) => option.value === params.value)) {
         throw new AdapterError("INVALID_CONFIGURATION", `Unknown thought level: ${params.value}`);
@@ -344,8 +347,7 @@ export class HeadlessZCodeSessionEngine implements SessionEngine {
         SessionSnapshotSchema,
         60_000,
       );
-      binding.settings = snapshot.settings;
-      binding.snapshot = snapshot;
+      updateBindingSnapshot(binding, snapshot);
     } else {
       throw new AdapterError("INVALID_CONFIGURATION", `Unknown config option: ${params.configId}`);
     }
@@ -521,10 +523,10 @@ export class HeadlessZCodeSessionEngine implements SessionEngine {
     workspacePath: string,
     snapshot: SessionSnapshot,
   ): Promise<SessionBinding> {
+    requireZCodeModeId(snapshot.settings.mode.current);
     const previous = this.sessions.get(snapshot.session.sessionId);
     if (previous !== undefined) {
-      previous.settings = snapshot.settings;
-      previous.snapshot = snapshot;
+      updateBindingSnapshot(previous, snapshot);
       this.workspaceCommands.set(workspacePath, availableCommands(snapshot));
       return previous;
     }
@@ -563,6 +565,7 @@ export class HeadlessZCodeSessionEngine implements SessionEngine {
     sessionId: string,
     snapshot: SessionSnapshot,
   ): Promise<void> {
+    const currentModeId = requireZCodeModeId(snapshot.settings.mode.current);
     await interaction.notify(sessionId, {
       sessionUpdate: "available_commands_update",
       availableCommands: availableCommands(snapshot),
@@ -573,7 +576,7 @@ export class HeadlessZCodeSessionEngine implements SessionEngine {
     });
     await interaction.notify(sessionId, {
       sessionUpdate: "current_mode_update",
-      currentModeId: snapshot.settings.mode.current,
+      currentModeId,
     });
     await interaction.notify(sessionId, {
       sessionUpdate: "session_info_update",
@@ -627,8 +630,7 @@ export class HeadlessZCodeSessionEngine implements SessionEngine {
   private async handleDynamicEvent(binding: SessionBinding, dynamic: DynamicEvent): Promise<void> {
     const turn = binding.active;
     if (dynamic.type === "snapshot") {
-      binding.settings = dynamic.snapshot.settings;
-      binding.snapshot = dynamic.snapshot;
+      updateBindingSnapshot(binding, dynamic.snapshot);
       if (turn !== undefined) {
         await this.notifySessionMetadata(turn.interaction, binding.sessionId, dynamic.snapshot);
       }
@@ -833,8 +835,7 @@ export class HeadlessZCodeSessionEngine implements SessionEngine {
         },
         SessionSnapshotSchema,
       );
-      binding.settings = snapshot.settings;
-      binding.snapshot = snapshot;
+      updateBindingSnapshot(binding, snapshot);
       await this.notifySessionMetadata(turn.interaction, binding.sessionId, snapshot);
       settleTurn(turn, "resolve", {
         stopReason: stopReason(event.payload, turn.cancelled),
@@ -1140,13 +1141,35 @@ function sessionSetupResponse(snapshot: SessionSnapshot): SessionSetup {
 }
 
 function sessionState(snapshot: SessionSnapshot): SessionState {
+  const currentModeId = requireZCodeModeId(snapshot.settings.mode.current);
   return {
     modes: {
-      currentModeId: snapshot.settings.mode.current,
-      availableModes: MODE_OPTIONS,
+      currentModeId,
+      availableModes: MODE_OPTIONS.map((mode) => ({ ...mode })),
     },
     configOptions: configOptions(snapshot.settings),
   };
+}
+
+function isZCodeModeId(modeId: string): modeId is ZCodeModeId {
+  return MODE_OPTIONS.some((mode) => mode.id === modeId);
+}
+
+function requireZCodeModeId(modeId: string): ZCodeModeId {
+  if (!isZCodeModeId(modeId)) {
+    throw new AdapterError(
+      "NATIVE_PROTOCOL_ERROR",
+      `ZCode returned a mode outside the published catalog: ${modeId}`,
+    );
+  }
+  return modeId;
+}
+
+function updateBindingSnapshot(binding: SessionBinding, snapshot: SessionSnapshot): ZCodeModeId {
+  const currentModeId = requireZCodeModeId(snapshot.settings.mode.current);
+  binding.settings = snapshot.settings;
+  binding.snapshot = snapshot;
+  return currentModeId;
 }
 
 export function configOptions(settings: SessionSettings): SessionConfigOption[] {
