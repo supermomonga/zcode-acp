@@ -35,6 +35,8 @@ Only the latest verified ZCode release is supported. Updating the manifest repla
 | --- | --- | --- | --- |
 | 3.11.2 | 0.16.5 | `zcode-host-3.11.2` | `zcode-task-v1` |
 
+ZCode **3.14.5 is not supported**. The [2026-10-11 compatibility review](docs/11-zcode-3.14.5-review.md) verified that the official 3.14.5 / CLI 0.16.9 distribution is rejected, that the host RPC artifact and exports changed, and that the adapter's `readWorkspaceState` call no longer exists. Updating only the version or hashes is insufficient; the host contract must be migrated and verified first.
+
 The same ZCode version resolves to this single artifact and protocol on macOS, Linux, and Windows. Operating-system-specific code is limited to locating the installed files and requiring the metadata platform to exactly match the running OS and architecture.
 
 Compatibility requires the known metadata semantics, an exact process/metadata platform match, the current app and CLI versions, exact host index and RPC-module hashes, and the required RPC exports. The app build and raw metadata SHA-256 remain diagnostic fields only. A different `zcode.cjs` hash is reported as `cliIntegrity: "modified"` but does not invalidate an otherwise verified host artifact. Run `doctor --json` to inspect `hostArtifact`, `hostProtocol`, and both decisions.

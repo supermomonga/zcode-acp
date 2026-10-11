@@ -2,6 +2,8 @@
 
 この文書は互換性判定に使う一次資料、実測値、再現commandを記録します。これらの証拠を最新の検証済み1バージョンへ限定する理由は[ADR 0005](adr/0005-zui-xin-nojian-zheng-ji-mizcode-1baziyondakewoyan-mi-nisapotosuru.md)を参照してください。
 
+3.14.5 の候補成果物と非互換点は [2026-10-11 の調査](11-zcode-3.14.5-review.md)に記録しています。候補の測定値であり、以下の対応済み manifest を置き換えるものではありません。
+
 ## 1. Current ZCode artifact
 
 調査日: 2026-09-04
